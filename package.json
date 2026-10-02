@@ -3,14 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "predev": "node -e \"try{require('fs').rmSync('.next',{recursive:true,force:true})}catch{}\"",
+    "dev": "next dev -p 3001",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -p 3001",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
+    "@adeu/core": "^3.0.6",
     "@prisma/client": "^6.4.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

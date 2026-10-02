@@ -44,7 +44,13 @@ export async function GET(
     const sortOrder = url.searchParams.get("sortOrder") || (sortBy === "significance" ? "desc" : "asc");
 
     // Build filter where clause
-    const whereClause: any = {
+    const whereClause: {
+      comparisonId: string;
+      significance?: { in: string[] };
+      changeType?: { in: string[] };
+      type?: { in: string[] };
+      category?: string | { in: string[] };
+    } = {
       comparisonId,
     };
 

@@ -44,7 +44,7 @@ export function MultiDocChatContainer({
       // Refresh conversations associated with the primary document
       const res = await fetch(`/api/conversations?documentId=${docIds[0]}`);
       if (res.ok) {
-        const list: any[] = await res.json();
+        const list: ConversationSummary[] = await res.json();
         // Filter or display multi-doc conversations
         const multiList = list.filter((c) => c.kind === "multi");
         setConversations(

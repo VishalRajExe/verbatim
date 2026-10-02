@@ -8,9 +8,9 @@ export const ExtractResponseSchema = z.object({
   quotes: z.array(
     z.object({
       text: z.string().min(1),
-      why: z.string().min(1),
+      why: z.string().optional().default(""),
     })
-  ),
+  ).default([]),
 });
 
 export type ExtractResponse = z.infer<typeof ExtractResponseSchema>;

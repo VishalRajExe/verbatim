@@ -16,8 +16,15 @@ import { categorizeClause } from "./categories";
 import { calculateMaterialityFloor, enforceSignificanceFloor, extractMaterialTokens } from "./materiality";
 import { getLlmClient, getLlmModel } from "@/lib/llm/client";
 import { parseJson } from "@/lib/llm/json";
-import { withRetry } from "@/lib/llm/retry";
+import { withRetry, assertNonEmptyContent } from "@/lib/llm/retry";
 import { z } from "zod";
+import type OpenAI from "openai";
+
+/** Minimal interface covering real OpenAI client + test mocks. */
+interface LlmClient {
+  chat?: OpenAI["chat"];
+  generateJson?: (opts: { system: string; prompt: string }) => Promise<unknown>;
+}
 
 export interface ComparisonPipelineChange {
   id: string;
@@ -147,7 +154,7 @@ function buildDeterministicSummary(
 }
 
 export interface PipelineOptions {
-  llm?: any; // optional custom LLM mock/instance
+  llm?: LlmClient; // optional custom LLM mock/instance
   signal?: AbortSignal;
   onProgress?: (stage: string) => Promise<void> | void;
 }
@@ -232,7 +239,7 @@ export async function runComparisonPipeline(
     batches.push(prepared.slice(i, i + AI_BATCH_SIZE));
   }
 
-  let client: any = null;
+  let client: LlmClient | null = null;
   let modelName = "";
 
   if (options.llm) {
@@ -285,8 +292,12 @@ Return ONLY a valid JSON array of objects.`;
           rawResponse = typeof res === "string" ? res : JSON.stringify(res);
         } else {
           // Standard OpenAI SDK client with retry
+          if (!client.chat) {
+            throw new Error("[ComparePipeline] LLM client has no chat interface");
+          }
+          const chat = client.chat;
           const resp = await withRetry(async () => {
-            return client.chat.completions.create(
+            return chat.completions.create(
               {
                 model: modelName,
                 temperature: 0,
@@ -300,6 +311,7 @@ Return ONLY a valid JSON array of objects.`;
           }, options.signal);
 
           rawResponse = resp.choices[0]?.message?.content ?? "";
+          assertNonEmptyContent(rawResponse || null, "comparePipeline.aiBatch");
         }
 
         const parsed = await parseJson(rawResponse, AiChangeBatchSchema);

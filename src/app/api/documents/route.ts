@@ -36,10 +36,10 @@ export async function GET() {
     });
 
     return NextResponse.json({ documents });
-  } catch (err: any) {
-    console.error("[API] Failed to list documents:", err);
+  } catch (err: unknown) {
+    console.error("[API] Failed to list documents:", err instanceof Error ? err.message : err);
     return NextResponse.json(
-      { error: "Failed to list documents" },
+      { error: { code: "INTERNAL", message: "Failed to list documents." } },
       { status: 500 }
     );
   }
@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const filename = (file as any).name || "document";
+    const filename = (file instanceof File ? file.name : null) || "document";
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
@@ -113,7 +113,7 @@ export async function POST(req: NextRequest) {
       },
       { status: 202 }
     );
-  } catch (err: any) {
+  } catch (err: unknown) {
     if (err instanceof AppError) {
       return NextResponse.json(
         { error: err.message, code: err.code },
@@ -121,9 +121,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    console.error("[API] Upload error:", err);
+    console.error("[API] Upload error:", err instanceof Error ? err.message : err);
     return NextResponse.json(
-      { error: "Internal server error during upload", code: "INTERNAL" },
+      { error: { code: "INTERNAL", message: "Internal server error during upload." } },
       { status: 500 }
     );
   }

@@ -15,6 +15,7 @@
  */
 import { z } from "zod";
 import type OpenAI from "openai";
+import { assertNonEmptyContent } from "@/lib/llm/retry";
 
 /** Strip markdown code fences and trim whitespace. */
 export function stripCodeFences(raw: string): string {
@@ -109,6 +110,8 @@ export function makeRepairFn(
       },
       { signal }
     );
-    return resp.choices[0]?.message?.content ?? "";
+    const content = resp.choices[0]?.message?.content;
+    assertNonEmptyContent(content, "makeRepairFn");
+    return content;
   };
 }

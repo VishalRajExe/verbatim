@@ -35,6 +35,22 @@ def generate_150_page_pdf(output_path):
             "in strict confidence and shall not disclose such materials to any unauthorized third party without prior consent.",
         ]
 
+        # On page 10, insert the liability clause
+        if p == 10:
+            lines.extend([
+                "",
+                "Section 10.5 Limitation of Liability.",
+                "Supplier's aggregate liability under this Agreement shall not exceed AED 100,000.",
+            ])
+
+        # On page 87, insert the page 87 unique test token
+        if p == 87:
+            lines.extend([
+                "",
+                "Section 87.5 Verification Marker.",
+                "The internal test identifier PAGE-UNIQUE-TOKEN-087 is included to verify page-specific retrieval and complete-document coverage.",
+            ])
+
         # On page 115, insert the known termination clause split cleanly across lines so it fits A4 width
         if p == 115:
             lines.extend([
@@ -43,6 +59,14 @@ def generate_150_page_pdf(output_path):
                 "Either party may terminate this Agreement immediately by written notice",
                 "if the other party breaches any material term and fails to remedy such breach",
                 "within thirty days of receiving written notice thereof.",
+            ])
+
+        # On page 150, insert the page 150 unique test token
+        if p == 150:
+            lines.extend([
+                "",
+                "Section 150.5 End-of-Contract Verification Marker.",
+                "The internal test identifier PAGE-UNIQUE-TOKEN-150 is included to verify page-specific retrieval and complete-document coverage.",
             ])
 
         for line in lines:

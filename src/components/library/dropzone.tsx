@@ -45,7 +45,8 @@ export function Dropzone({ onUploadSuccess }: DropzoneProps = {}) {
       const data = await res.json();
 
       if (!res.ok) {
-        setErrorMessage(data.error || "Failed to upload document.");
+        const errMsg = typeof data.error === "object" ? (data.error?.message || "Failed to upload document.") : (data.error || "Failed to upload document.");
+        setErrorMessage(errMsg);
       } else {
         mutate("/api/documents");
         onUploadSuccess?.();
@@ -53,8 +54,8 @@ export function Dropzone({ onUploadSuccess }: DropzoneProps = {}) {
           fileInputRef.current.value = "";
         }
       }
-    } catch (err: any) {
-      setErrorMessage(err.message || "Network error during upload.");
+    } catch (err: unknown) {
+      setErrorMessage(err instanceof Error ? err.message : "Network error during upload.");
     } finally {
       setIsUploading(false);
     }

@@ -1,4 +1,5 @@
 import React from "react";
+import Link from "next/link";
 import { db } from "@/lib/db";
 import { Dropzone } from "@/components/library/dropzone";
 import { DocumentList } from "@/components/library/document-list";
@@ -50,9 +51,20 @@ export default async function LibraryPage() {
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-verified-soft text-verified border border-verified-line">
-              Phase 1 Active
+          <div className="flex items-center gap-6">
+            <nav className="flex items-center gap-4 text-xs font-medium">
+              <Link href="/" className="text-ink font-semibold border-b-2 border-accent pb-0.5">
+                Library
+              </Link>
+              <Link href="/compare" className="text-ink-muted hover:text-ink transition-colors pb-0.5">
+                Compare versions
+              </Link>
+              <Link href="/ask" className="text-ink-muted hover:text-ink transition-colors pb-0.5">
+                Ask across
+              </Link>
+            </nav>
+            <span className="hidden md:inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-verified-soft text-verified border border-verified-line">
+              Verified Quotes
             </span>
           </div>
         </div>

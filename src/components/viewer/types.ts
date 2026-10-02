@@ -14,7 +14,7 @@ export interface ActiveQuoteTarget {
   occurrences?: number;
   ranges?: Array<{
     segment?: string;
-    primary?: { start: number; end: number; pageStart: number; pageEnd: number };
+    primary?: { start: number; end: number; pageStart: number; pageEnd: number } | null;
     occurrences?: Array<{ start: number; end: number; pageStart: number; pageEnd: number }>;
   }>;
   currentOccurrenceIndex: number; // 0-based

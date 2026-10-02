@@ -27,6 +27,7 @@ export interface StatusVerifyingEvent {
 export interface StatusComposingEvent {
   type: "status";
   stage: "composing";
+  message?: string;
 }
 
 /** A quote event carries both verified and unverified quotes. */
@@ -41,7 +42,7 @@ export interface QuoteEventItem {
   pageStart: number | null;
   pageEnd: number | null;
   occurrences: number;
-  ranges?: any;
+  ranges?: Array<{ segment?: string; primary?: { start: number; end: number; pageStart: number; pageEnd: number } | null; occurrences?: Array<{ start: number; end: number; pageStart: number; pageEnd: number }> }>;
 }
 
 export interface QuotesEvent {

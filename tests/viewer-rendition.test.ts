@@ -24,6 +24,7 @@ import { db } from "@/lib/db";
 import { POST as uploadDoc } from "@/app/api/documents/route";
 import { waitForDocument } from "@/lib/jobs/runner";
 import { GET as getRendition } from "@/app/api/documents/[id]/rendition/route";
+import { POST as convertPdfRoute } from "@/app/api/documents/[id]/convert-pdf/route";
 import { GET as locateApi } from "@/app/api/documents/[id]/locate/route";
 import { locate } from "@/lib/verify/locate";
 import { verifyQuote } from "@/lib/verify/verify-quote";
@@ -169,7 +170,25 @@ describe("Phase 5 - PDF Viewer & Citation Highlighting (FR-5)", () => {
       expect(res.headers.get("content-range")).toContain("bytes */");
     });
 
-    it("returns converted PDF rendition for DOCX document", async () => {
+    it("returns converted PDF rendition for DOCX document after explicit conversion", async () => {
+      // Phase 9: DOCX does not automatically convert to PDF at upload
+      const reqBefore = new NextRequest(
+        `http://localhost:3000/api/documents/${docxDocId}/rendition`
+      );
+      const resBefore = await getRendition(reqBefore, { params: { id: docxDocId } });
+      expect(resBefore.status).toBe(404);
+
+      // Explicit conversion requested
+      const convertReq = new NextRequest(
+        `http://localhost:3000/api/documents/${docxDocId}/convert-pdf`,
+        { method: "POST" }
+      );
+      const convertRes = await convertPdfRoute(convertReq, {
+        params: Promise.resolve({ id: docxDocId }),
+      });
+      expect(convertRes.status).toBe(200);
+
+      // Now rendition is available
       const req = new NextRequest(
         `http://localhost:3000/api/documents/${docxDocId}/rendition`
       );
@@ -184,7 +203,7 @@ describe("Phase 5 - PDF Viewer & Citation Highlighting (FR-5)", () => {
         new Uint8Array(arrayBuf.slice(0, 5))
       );
       expect(headerStr).toBe("%PDF-");
-    });
+    }, 60000);
   });
 
   describe("Task 3 & 4: Multi-line Quote Locating", () => {

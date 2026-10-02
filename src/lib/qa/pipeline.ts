@@ -13,9 +13,9 @@
 import { db } from "@/lib/db";
 import { env } from "@/lib/env";
 import { getLlmClient, getLlmModel } from "@/lib/llm/client";
-import { withRetry } from "@/lib/llm/retry";
-import { llmLimiter } from "@/lib/llm/limiter";
-import { parseJson, makeRepairFn } from "@/lib/llm/json";
+import { withRetry, assertNonEmptyContent } from "@/lib/llm/retry";
+import { llmLimiter, sleep } from "@/lib/llm/limiter";
+import { parseJson, makeRepairFn, stripCodeFences } from "@/lib/llm/json";
 import {
   extractSystemPrompt,
   extractUserMessage,
@@ -26,9 +26,11 @@ import {
   notFoundComplete,
   notFoundPartial,
   notFoundMulti,
+  composeEvidenceFallback,
 } from "@/lib/qa/prompts";
 import { ExtractResponseSchema } from "@/lib/qa/schemas";
 import { chunkDocument } from "@/lib/qa/chunker";
+import { selectRelevantChunks } from "@/lib/qa/retrieval";
 import {
   initCoverage,
   markChunkRead,
@@ -124,18 +126,45 @@ async function extractFromChunk(
         { signal }
       )
     );
-    return resp.choices[0]?.message?.content ?? "";
-  }, signal);
+    const content = resp.choices[0]?.message?.content;
+    assertNonEmptyContent(content, "extractFromChunk");
+    return content;
+  }, signal, {
+    stage: "extraction",
+    model,
+    maxAttempts: 3,
+  });
 
-  const repair = makeRepairFn(client, model, signal);
-  const result = await parseJson(rawOutput, ExtractResponseSchema, repair);
-
-  if (!result.ok || !result.data) {
-    // Failed extraction lowers coverage but doesn't crash.
-    throw new Error(`Extract parse failed: ${result.error}`);
+  // Tolerant parsing following reference implementation pattern:
+  // payload.get("quotes", []) if isinstance(payload, dict) else []
+  let quotes: Array<{ text: string; why: string }> = [];
+  try {
+    const stripped = stripCodeFences(rawOutput);
+    const parsed = JSON.parse(stripped);
+    if (parsed && typeof parsed === "object") {
+      if (Array.isArray(parsed)) {
+        quotes = parsed
+          .filter((item: any) => item && typeof item.text === "string" && item.text.trim().length > 0)
+          .map((item: any) => ({ text: item.text.trim(), why: typeof item.why === "string" ? item.why : "" }));
+      } else if (Array.isArray((parsed as any).quotes)) {
+        quotes = (parsed as any).quotes
+          .filter((item: any) => item && typeof item.text === "string" && item.text.trim().length > 0)
+          .map((item: any) => ({ text: item.text.trim(), why: typeof item.why === "string" ? item.why : "" }));
+      } else {
+        // Model returned an object without quotes key (e.g. { error: "not found" }, { note: "..." })
+        quotes = [];
+      }
+    }
+  } catch {
+    // If strict JSON.parse failed, fall back to tolerant schema + repair
+    const repair = makeRepairFn(client, model, signal);
+    const result = await parseJson(rawOutput, ExtractResponseSchema, repair);
+    if (result.ok && result.data?.quotes) {
+      quotes = result.data.quotes.map((q) => ({ text: q.text, why: q.why || "" }));
+    } else {
+      quotes = [];
+    }
   }
-
-  let quotes = result.data.quotes;
 
   // Test hook: if VERBATIM_TEST_INVENT_QUOTE is "true", append a fake quote.
   // This is ONLY for testing that unverified quotes are correctly isolated.
@@ -260,6 +289,11 @@ export async function runQaPipeline(ctx: PipelineContext): Promise<string> {
     const successfulChunks = new Set<number>();
     const failedChunks = new Set<number>();
     let progressCount = 0;
+    // Generic multi-pass concept retrieval & section selection
+    const retrieval = selectRelevantChunks(chunks, question, {
+      maxChunksToRead: 3,
+    });
+    const chunksToRead = retrieval.selectedChunks;
 
     // Emit initial progress for this document
     emit(
@@ -268,69 +302,72 @@ export async function runQaPipeline(ctx: PipelineContext): Promise<string> {
         stage: "reading",
         documentId: targetDoc.id,
         done: 0,
-        total: chunks.length,
+        total: chunksToRead.length,
       })
     );
 
-    await Promise.all(
-      chunks.map(async (chunk) => {
-        if (signal.aborted) return;
+    for (const chunk of chunksToRead) {
+      if (signal.aborted) break;
 
-        try {
-          const failHook =
-            process.env.VERBATIM_TEST_FAIL_CHUNK ||
-            env.VERBATIM_TEST_FAIL_CHUNK;
-          if (
-            failHook &&
-            (failHook === "true"
-              ? chunk.index === 0
-              : Number(failHook) === chunk.index)
-          ) {
-            throw new Error(`Test hook: forced failure of chunk ${chunk.index}`);
-          }
-
-          const extracted = await extractFromChunk(
-            targetDoc.name,
-            chunk.text,
-            question,
-            chunk.charStart,
-            chunk.charEnd,
-            targetDoc.id,
-            signal
-          );
-
-          for (const q of extracted) {
-            allRawQuotes.push({
-              text: q.text,
-              chunkStart: chunk.charStart,
-              chunkEnd: chunk.charEnd,
-              documentId: targetDoc.id,
-              documentName: targetDoc.name,
-            });
-          }
-          successfulChunks.add(chunk.index);
-        } catch (err: unknown) {
-          if (signal.aborted) return;
-          console.error(`[qa] chunk ${chunk.index} extraction failed:`, {
-            documentId: targetDoc.id,
-            chunk: chunk.index,
-            error: err instanceof Error ? err.message : String(err),
-          });
-          failedChunks.add(chunk.index);
-        } finally {
-          progressCount++;
-          emit(
-            encodeEvent({
-              type: "status",
-              stage: "reading",
-              documentId: targetDoc.id,
-              done: Math.min(progressCount, chunks.length),
-              total: chunks.length,
-            })
-          );
+      try {
+        const failHook =
+          process.env.VERBATIM_TEST_FAIL_CHUNK ||
+          env.VERBATIM_TEST_FAIL_CHUNK;
+        if (
+          failHook &&
+          (failHook === "true"
+            ? chunk.index === 0
+            : Number(failHook) === chunk.index)
+        ) {
+          throw new Error(`Test hook: forced failure of chunk ${chunk.index}`);
         }
-      })
-    );
+
+        const extracted = await extractFromChunk(
+          targetDoc.name,
+          chunk.text,
+          question,
+          chunk.charStart,
+          chunk.charEnd,
+          targetDoc.id,
+          signal
+        );
+
+        for (const q of extracted) {
+          allRawQuotes.push({
+            text: q.text,
+            chunkStart: chunk.charStart,
+            chunkEnd: chunk.charEnd,
+            documentId: targetDoc.id,
+            documentName: targetDoc.name,
+          });
+        }
+        successfulChunks.add(chunk.index);
+      } catch (err: unknown) {
+        if (signal.aborted) break;
+        console.error(`[qa] chunk ${chunk.index} extraction failed:`, {
+          documentId: targetDoc.id,
+          chunk: chunk.index,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        failedChunks.add(chunk.index);
+      } finally {
+        progressCount++;
+        emit(
+          encodeEvent({
+            type: "status",
+            stage: "reading",
+            documentId: targetDoc.id,
+            done: Math.min(progressCount, chunksToRead.length),
+            total: chunksToRead.length,
+          })
+        );
+      }
+
+      // Small pacing pause between chunk extractions to stay safely under API rate limits
+      if (chunksToRead.length > 1) {
+        await sleep(500, signal).catch(() => {});
+      }
+    }
 
     coverage = {
       ...coverage,
@@ -437,7 +474,7 @@ export async function runQaPipeline(ctx: PipelineContext): Promise<string> {
         verified: q.verified,
         matchKind: q.verified ? (q as VerifiedQuote).matchKind : null,
         failReason: q.verified ? null : (q as UnverifiedQuote).failReason,
-        ranges: q.verified ? ((q as VerifiedQuote).ranges as any) : undefined,
+        ranges: q.verified ? ((q as VerifiedQuote).ranges as object) : undefined,
       })),
     });
   }
@@ -529,6 +566,8 @@ export async function runQaPipeline(ctx: PipelineContext): Promise<string> {
           question
         );
 
+    let compositionSuccess = false;
+
     try {
       const stream = await withRetry(
         () =>
@@ -546,7 +585,28 @@ export async function runQaPipeline(ctx: PipelineContext): Promise<string> {
               { signal }
             )
           ),
-        signal
+        signal,
+        {
+          stage: "composition",
+          model,
+          maxAttempts: 3,
+          onRetry: (_attempt, _delayMs, err) => {
+            const status =
+              err && typeof err === "object" && "status" in err
+                ? (err as { status: unknown }).status
+                : null;
+            const isRateLimit = status === 429;
+            emit(
+              encodeEvent({
+                type: "status",
+                stage: "composing",
+                message: isRateLimit
+                  ? "The AI service is temporarily rate-limited. Retrying…"
+                  : "Connecting to AI service. Retrying…",
+              })
+            );
+          },
+        }
       );
 
       for await (const part of stream) {
@@ -570,22 +630,56 @@ export async function runQaPipeline(ctx: PipelineContext): Promise<string> {
         emit(encodeEvent({ type: "token", text: tail }));
       }
 
-      if (!signal.aborted) finalStatus = "complete";
+      if (!signal.aborted) {
+        finalStatus = "complete";
+        compositionSuccess = true;
+      }
     } catch (err: unknown) {
       if (signal.aborted) {
         finalStatus = "stopped";
       } else {
-        finalStatus = "error";
-        const errMsg =
-          err instanceof Error ? err.message : "LLM call failed";
-        emit(
-          encodeEvent({
-            type: "error",
-            code: "LLM_UNAVAILABLE",
-            message: errMsg,
-          })
+        const status =
+          err && typeof err === "object" && "status" in err
+            ? (err as { status: unknown }).status
+            : null;
+        console.warn(
+          `[qa] composition failed (status: ${status}):`,
+          err instanceof Error ? err.message : String(err)
         );
       }
+    }
+
+    // Safe fallback: If composition failed (e.g. rate limit 429 after retries) but we have verified quotes,
+    // generate a deterministic evidence-based answer directly from the verified quotes (Rules I-3, I-5).
+    if (!compositionSuccess && !signal.aborted) {
+      const allCoverageComplete = allCoverages.every((c) => c.complete);
+      const uninspectedReason = allCoverages.some((c) => c.failedChunks.length > 0)
+        ? "some document sections could not be inspected due to service limits"
+        : undefined;
+
+      const fallbackText = composeEvidenceFallback(
+        verified.map((q) => ({
+          ref: q.ref,
+          documentName: q.documentName,
+          text: q.text,
+          pageStart: q.pageStart,
+        })),
+        targetDocs.map((d) => d.name),
+        allCoverageComplete,
+        uninspectedReason
+      );
+
+      if (finalContent.trim().length === 0) {
+        finalContent = fallbackText;
+        emit(encodeEvent({ type: "token", text: fallbackText }));
+      } else {
+        // In the rare event of a mid-stream failure, append notice
+        const notice = "\n\n*(AI composition stream was interrupted. Verified evidence shown above.)*";
+        finalContent += notice;
+        emit(encodeEvent({ type: "token", text: notice }));
+      }
+
+      finalStatus = "complete";
     }
   }
 

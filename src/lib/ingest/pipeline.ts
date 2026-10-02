@@ -4,6 +4,7 @@ import { extractPdf } from "./extract-pdf";
 import { checkScannedPdf } from "./scan-check";
 import { stripPageFurniture } from "./strip-furniture";
 import { buildCanonicalDocument } from "./build-canonical";
+import { extractDocxText } from "@/lib/redline/view";
 import { AppError } from "@/lib/errors";
 
 /**
@@ -27,27 +28,46 @@ export async function processDocument(documentId: string): Promise<void> {
   try {
     let pdfBuffer: Buffer;
 
-    // 1. DOCX Conversion stage
+    // DOCX Handling: Read authoritative text directly.
+    // Do NOT automatically convert to PDF (user-controlled on demand).
     if (doc.kind === "docx") {
       await db.document.update({
         where: { id: documentId },
         data: {
-          status: "CONVERTING",
-          stage: "Converting DOCX to PDF",
-          progress: 10,
+          status: "INDEXING",
+          stage: "Reading authoritative DOCX text",
+          progress: 50,
         },
       });
 
-      pdfBuffer = await convertDocxToPdf(Buffer.from(doc.file.original));
+      const docxText = await extractDocxText(Buffer.from(doc.file.original));
+      const charCount = docxText.length;
+      const tokenEstimate = Math.ceil(charCount / 4);
 
-      // Save PDF rendition alongside original DOCX
-      await db.documentFile.update({
+      await db.documentText.upsert({
         where: { documentId },
-        data: { rendition: new Uint8Array(pdfBuffer) },
+        create: { documentId, text: docxText },
+        update: { text: docxText },
       });
-    } else {
-      pdfBuffer = Buffer.from(doc.file.original);
+
+      await db.document.update({
+        where: { id: documentId },
+        data: {
+          status: "READY",
+          stage: "Ready",
+          progress: 100,
+          pageCount: 1,
+          charCount,
+          tokenEstimate,
+          errorCode: null,
+          errorMessage: null,
+        },
+      });
+
+      return;
     }
+
+    pdfBuffer = Buffer.from(doc.file.original);
 
     // 2. Extraction stage
     await db.document.update({
@@ -158,18 +178,25 @@ export async function processDocument(documentId: string): Promise<void> {
       try {
         await runTx();
         break;
-      } catch (txErr: any) {
-        if (txErr?.code === "P2034" && attempt < 3) {
+      } catch (txErr: unknown) {
+        if (
+          txErr &&
+          typeof txErr === "object" &&
+          "code" in txErr &&
+          (txErr as { code: unknown }).code === "P2034" &&
+          attempt < 3
+        ) {
           await new Promise((r) => setTimeout(r, 300 * attempt));
           continue;
         }
         throw txErr;
       }
     }
-  } catch (err: any) {
-    const errorCode = err.code || "INTERNAL";
-    // Truncate long messages (Prisma errors can include full stack traces).
-    const rawMsg: string = err.message || "An unexpected error occurred during processing.";
+  } catch (err: unknown) {
+    const errObj = err && typeof err === "object" ? err as Record<string, unknown> : {};
+    const errorCode = typeof errObj.code === "string" ? errObj.code : "INTERNAL";
+    const rawMsg = typeof errObj.message === "string" ? errObj.message
+      : (err instanceof Error ? err.message : "An unexpected error occurred during processing.");
     const errorMessage = rawMsg.slice(0, 500);
     await db.document.update({
       where: { id: documentId },

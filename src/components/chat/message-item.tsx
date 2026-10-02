@@ -19,7 +19,7 @@ export interface QuoteData {
   pageEnd?: number | null;
   occurrences?: number;
   failReason?: string | null;
-  ranges?: any;
+  ranges?: Array<{ segment?: string; primary?: { start: number; end: number; pageStart: number; pageEnd: number } | null; occurrences?: Array<{ start: number; end: number; pageStart: number; pageEnd: number }> }>;
 }
 
 export interface MessageData {
@@ -28,6 +28,7 @@ export interface MessageData {
   content: string;
   status: "STREAMING" | "COMPLETE" | "STOPPED" | "ERROR";
   stage?: string | null;
+  stageMessage?: string | null;
   stageDone?: number;
   stageTotal?: number;
   coverage?: CoverageDoc[] | null;
@@ -77,6 +78,7 @@ export function MessageItem({
   const isError = message.status === "ERROR";
 
   const stageText = (() => {
+    if (message.stageMessage) return message.stageMessage;
     if (!message.stage) return null;
     if (message.stage === "reading") {
       return `Reading section ${message.stageDone || 1} of ${message.stageTotal || 1}…`;
@@ -88,6 +90,20 @@ export function MessageItem({
       return "Writing answer…";
     }
     return message.stage;
+  })();
+
+  const friendlyError = (() => {
+    if (!message.errorMessage) return "An error occurred while generating the response.";
+    const lower = message.errorMessage.toLowerCase();
+    if (
+      lower.includes("429") ||
+      lower.includes("rate limit") ||
+      lower.includes("exhausted") ||
+      lower.includes("quota")
+    ) {
+      return "The AI service is temporarily rate-limited. Please wait a few moments and try again.";
+    }
+    return message.errorMessage;
   })();
 
   return (
@@ -190,6 +206,37 @@ export function MessageItem({
             onQuoteHover={onQuoteHover}
             onQuoteLeave={onQuoteLeave}
           />
+
+          {/* Citation pills directly under answer matching reference UX */}
+          {verifiedQuotes.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-2 pt-1">
+              {verifiedQuotes.map((q) => {
+                const pageLabel = q.pageStart
+                  ? q.pageEnd && q.pageEnd !== q.pageStart
+                    ? `p.${q.pageStart}–${q.pageEnd}`
+                    : `p.${q.pageStart}`
+                  : null;
+                return (
+                  <button
+                    key={q.ref}
+                    type="button"
+                    onClick={() => onQuoteSelect?.(q, 0)}
+                    onMouseEnter={() => onQuoteHover?.(q.ref)}
+                    onMouseLeave={() => onQuoteLeave?.()}
+                    className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-all cursor-pointer ${
+                      activeQuoteRef === q.ref
+                        ? "bg-accent text-on-accent shadow-sm"
+                        : "bg-surface-raised border border-line text-ink-muted hover:border-accent hover:text-accent hover:bg-surface"
+                    }`}
+                    title={q.text}
+                  >
+                    <span className="font-semibold">{q.ref}</span>
+                    {pageLabel && <span className="opacity-80">· {pageLabel}</span>}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
@@ -201,7 +248,7 @@ export function MessageItem({
             <span>Could not complete answer</span>
           </div>
           <p className="text-xs text-ink-muted">
-            {message.errorMessage || "An error occurred while generating the response."}
+            {friendlyError}
           </p>
           {onRetry && (
             <button

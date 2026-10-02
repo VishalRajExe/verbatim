@@ -30,12 +30,13 @@ Your task: Find passages from the document that directly answer or provide evide
 Rules for each quote:
 1. The quote MUST be verbatim — copied character-for-character from the document text, including capitalisation and punctuation.
 2. Each quote MUST be a single contiguous passage (no ellipses, no "[…]", no skipped text).
-3. Each quote MUST be between 1 and 3 complete sentences.
-4. Do NOT paraphrase, summarise, interpret or rephrase any wording.
-5. Do NOT include page numbers, section numbers, line numbers, byte offsets or any positional information in the quote text.
-6. Do NOT include coordinates, offsets, start indices or end indices.
-7. Provide a brief "why" (1 sentence) explaining how this quote helps answer the question.
-8. If no verbatim passage answers the question, return an empty quotes array.
+3. Each quote MUST be between 1 and 3 contiguous sentences, clauses, or provisions. Provisions and clauses may span across page breaks or continue across headers; extract each relevant contiguous passage verbatim.
+4. When a requirement, timeline, or obligation spans multiple clauses or pages (such as an incident report requirement and its delivery timeline), extract all relevant passages needed for a complete, well-grounded answer.
+5. Do NOT paraphrase, summarise, interpret or rephrase any wording.
+6. Do NOT include page numbers, section numbers, line numbers, byte offsets or any positional information in the quote text.
+7. Do NOT include coordinates, offsets, start indices or end indices.
+8. Provide a brief "why" (1 sentence) explaining how this quote helps answer the question.
+9. If no verbatim passage answers the question, return an empty quotes array.
 
 Return format (JSON only):
 {
@@ -57,6 +58,7 @@ export function extractUserMessage(
   question: string
 ): string {
   return `Document: ${documentName}
+Question: ${question}
 
 <<<DOCUMENT_TEXT_START>>>
 ${chunkText}
@@ -81,8 +83,8 @@ export function composeSystemPrompt(): string {
   return `You are a contract analysis assistant. You will receive a set of verified quotes from a legal document and a question.
 
 Rules:
-1. Answer using ONLY the provided quotes. Do not use outside knowledge or assumptions.
-2. Cite every claim with [Q#] where # is the quote number (e.g. [Q1], [Q2]). Never cite [Q#] numbers that don't exist in the list.
+1. Answer using ONLY the provided verified quotes. Do not use outside knowledge or assumptions.
+2. Cite every claim with its [Q#] marker (e.g. [Q1], [Q2]). When multiple quotes support different parts of a sentence or obligation, cite each relevant quote (e.g. [Q1, Q2]). Never cite [Q#] markers that don't exist in the list.
 3. Do NOT reproduce the full quote text inside quotation marks in your answer. Refer to the content; the reader sees the quote card.
 4. Write clearly and concisely in plain language.
 5. If the provided quotes do not fully answer the question, say so explicitly. Do not invent information to fill the gap.
@@ -102,7 +104,7 @@ export function composeUserMessage(
   question: string
 ): string {
   const quotesBlock = quotes
-    .map((q) => `${q.ref}: ${q.text}`)
+    .map((q) => `[${q.ref}] (${documentName}): ${q.text}`)
     .join("\n\n");
 
   return `Document: ${documentName}
@@ -205,4 +207,56 @@ export function notFoundMulti(
     .join("; ");
   return `I couldn't find relevant passages in the sections I could read across the documents (${summary}). Absence is not confirmed.`;
 }
+
+/**
+ * Deterministic evidence-based answer generated when AI composition is unavailable
+ * (e.g., rate-limited 429 after bounded retries).
+ *
+ * Invariant I-3: Based STRICTLY and EXCLUSIVELY on verified quotes.
+ * Invariant I-5: Includes honest uncertainty notice if coverage is incomplete.
+ * Never invents facts or adds speculation.
+ */
+export function composeEvidenceFallback(
+  verifiedQuotes: Array<{
+    ref: string;
+    documentName: string;
+    text: string;
+    pageStart?: number | null;
+  }>,
+  targetDocNames: string[],
+  coverageComplete: boolean = true,
+  partialWarning?: string
+): string {
+  if (verifiedQuotes.length === 0) {
+    return "AI composition was temporarily unavailable, and no verified quotes were found in the document.";
+  }
+
+  const notice =
+    "AI composition was temporarily unavailable. Showing the verified evidence collected from the document:\n\n";
+
+  let body = "";
+  if (verifiedQuotes.length === 1) {
+    const q = verifiedQuotes[0];
+    const pageStr = q.pageStart ? ` (page ${q.pageStart})` : "";
+    body = `According to ${q.documentName}${pageStr}:\n"${q.text}" [${q.ref}]`;
+  } else {
+    const lines = verifiedQuotes.map((q) => {
+      const pageStr = q.pageStart ? ` (page ${q.pageStart})` : "";
+      return `• [${q.ref}] (${q.documentName}${pageStr}):\n"${q.text}"`;
+    });
+    body = `The following verified passages directly address this question:\n\n${lines.join(
+      "\n\n"
+    )}`;
+  }
+
+  let suffix = "";
+  if (!coverageComplete) {
+    suffix = `\n\n*Note: Coverage is incomplete — ${
+      partialWarning || "some sections could not be inspected"
+    }. Additional terms may exist elsewhere in the document.*`;
+  }
+
+  return notice + body + suffix;
+}
+
 

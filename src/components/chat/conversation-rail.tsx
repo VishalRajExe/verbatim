@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { ArrowLeft, Plus, MessageSquare, Trash2 } from "lucide-react";
+import { ArrowLeft, Plus, MessageSquare, Trash2, FileEdit, FileText } from "lucide-react";
 
 export interface ConversationSummary {
   id: string;
@@ -23,6 +23,8 @@ interface ConversationRailProps {
   onNewChat: () => void;
   onDeleteConversation: (id: string) => void;
   isCreatingChat?: boolean;
+  viewMode?: "chat" | "viewer" | "redline";
+  onSelectViewMode?: (mode: "chat" | "viewer" | "redline") => void;
 }
 
 export function ConversationRail({
@@ -35,6 +37,8 @@ export function ConversationRail({
   onNewChat,
   onDeleteConversation,
   isCreatingChat,
+  viewMode = "chat",
+  onSelectViewMode,
 }: ConversationRailProps) {
   return (
     <aside className="w-72 border-r border-line bg-surface flex flex-col shrink-0 h-full">
@@ -68,15 +72,57 @@ export function ConversationRail({
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={onNewChat}
-          disabled={isCreatingChat}
-          className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-md bg-accent text-on-accent text-xs font-medium hover:bg-accent/90 transition-colors disabled:opacity-50"
-        >
-          <Plus size={14} />
-          <span>New chat</span>
-        </button>
+        {/* View Mode Toggle: Chat vs Viewer vs Redline */}
+        <div className="grid grid-cols-3 gap-1 p-1 bg-sunken rounded-md">
+          <button
+            type="button"
+            onClick={() => onSelectViewMode?.("chat")}
+            className={`flex items-center justify-center gap-1 py-1.5 text-xs font-medium rounded transition-colors ${
+              viewMode === "chat"
+                ? "bg-surface text-ink shadow-sm font-semibold"
+                : "text-ink-muted hover:text-ink"
+            }`}
+          >
+            <MessageSquare size={13} />
+            <span>Chat</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => onSelectViewMode?.("viewer")}
+            className={`flex items-center justify-center gap-1 py-1.5 text-xs font-medium rounded transition-colors ${
+              viewMode === "viewer"
+                ? "bg-surface text-ink shadow-sm font-semibold"
+                : "text-ink-muted hover:text-ink"
+            }`}
+          >
+            <FileText size={13} />
+            <span>Viewer</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => onSelectViewMode?.("redline")}
+            className={`flex items-center justify-center gap-1 py-1.5 text-xs font-medium rounded transition-colors ${
+              viewMode === "redline"
+                ? "bg-surface text-accent font-semibold shadow-sm"
+                : "text-ink-muted hover:text-ink"
+            }`}
+          >
+            <FileEdit size={13} />
+            <span>Redline</span>
+          </button>
+        </div>
+
+        {viewMode === "chat" && (
+          <button
+            type="button"
+            onClick={onNewChat}
+            disabled={isCreatingChat}
+            className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-md bg-accent text-on-accent text-xs font-medium hover:bg-accent/90 transition-colors disabled:opacity-50"
+          >
+            <Plus size={14} />
+            <span>New chat</span>
+          </button>
+        )}
       </div>
 
       {/* Conversations List */}

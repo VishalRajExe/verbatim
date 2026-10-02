@@ -4,6 +4,7 @@ import path from "path";
 import { db } from "@/lib/db";
 import { POST as postDocument, GET as getDocuments } from "@/app/api/documents/route";
 import { GET as getDocument, DELETE as deleteDocument } from "@/app/api/documents/[id]/route";
+import { POST as convertPdfRoute } from "@/app/api/documents/[id]/convert-pdf/route";
 import { waitForDocument } from "@/lib/jobs/runner";
 import { recoverUnfinishedJobs } from "@/lib/jobs/recover";
 import { NextRequest } from "next/server";
@@ -92,7 +93,7 @@ describe("Phase 1 Ingestion Pipeline & Document Library", () => {
   }, 30000);
 
   // 2. DOCX upload and conversion
-  it("should upload DOCX, convert headlessly via LibreOffice, and reach READY", async () => {
+  it("should upload DOCX without auto-converting, reach READY, and convert to PDF only on demand", async () => {
     const docxPath = path.join(fixturesDir, "synthetic_spike_b.docx");
     const docxBuffer = fs.readFileSync(docxPath);
 
@@ -114,9 +115,25 @@ describe("Phase 1 Ingestion Pipeline & Document Library", () => {
     expect(doc!.kind).toBe("docx");
     expect(doc!.status).toBe("READY");
     expect(doc!.file?.original).toBeDefined();
-    expect(doc!.file?.rendition).toBeDefined();
-    expect(doc!.file!.rendition!.length).toBeGreaterThan(1000);
+    // Phase 9 requirement: DOCX upload does NOT automatically convert to PDF
+    expect(doc!.file?.rendition).toBeNull();
     expect(doc!.text?.text).toContain("Supplier's aggregate liability under this Agreement shall not exceed AED 100,000.");
+
+    // Explicit user-triggered PDF conversion
+    const convertReq = new NextRequest(`http://localhost:3000/api/documents/${body.id}/convert-pdf`, {
+      method: "POST",
+    });
+    const convertRes = await convertPdfRoute(convertReq, {
+      params: Promise.resolve({ id: body.id }),
+    });
+    expect(convertRes.status).toBe(200);
+
+    const docAfterConvert = await db.document.findUnique({
+      where: { id: body.id },
+      include: { file: true },
+    });
+    expect(docAfterConvert!.file?.rendition).toBeDefined();
+    expect(docAfterConvert!.file!.rendition!.length).toBeGreaterThan(1000);
   }, 45000);
 
   // 3. Scanned PDF (no selectable text)
@@ -236,8 +253,8 @@ describe("Phase 1 Ingestion Pipeline & Document Library", () => {
     const deleteReq = new NextRequest(`http://localhost:3000/api/documents/${docId}`, {
       method: "DELETE",
     });
-    const deleteRes = await deleteDocument(deleteReq, { params: { id: docId } });
-    expect(deleteRes.status).toBe(200);
+    const deleteRes = await deleteDocument(deleteReq, { params: Promise.resolve({ id: docId }) });
+    expect(deleteRes.status).toBe(204);
 
     // Verify complete cascade deletion across MySQL tables
     expect(await db.document.count({ where: { id: docId } })).toBe(0);

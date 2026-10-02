@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+interface RouteParams {
+  params: Promise<{ id: string }>;
+}
 
 /**
  * GET /api/documents/[id]
@@ -9,11 +14,12 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(
   _req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: RouteParams
 ) {
   try {
+    const { id } = await params;
     const document = await db.document.findUnique({
-      where: { id: params.id },
+      where: { id },
       select: {
         id: true,
         name: true,
@@ -45,16 +51,16 @@ export async function GET(
 
     if (!document) {
       return NextResponse.json(
-        { error: "Document not found", code: "DOC_NOT_FOUND" },
+        { error: { code: "DOC_NOT_FOUND", message: "Document not found." } },
         { status: 404 }
       );
     }
 
     return NextResponse.json({ document });
-  } catch (err: any) {
-    console.error("[API] Failed to get document:", err);
+  } catch (err: unknown) {
+    console.error("[API] Failed to get document:", err instanceof Error ? err.message : err);
     return NextResponse.json(
-      { error: "Internal server error" },
+      { error: { code: "INTERNAL", message: "Failed to load document." } },
       { status: 500 }
     );
   }
@@ -67,30 +73,28 @@ export async function GET(
  */
 export async function DELETE(
   _req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: RouteParams
 ) {
   try {
+    const { id } = await params;
     const existing = await db.document.findUnique({
-      where: { id: params.id },
+      where: { id },
       select: { id: true },
     });
 
     if (!existing) {
       return NextResponse.json(
-        { error: "Document not found", code: "DOC_NOT_FOUND" },
+        { error: { code: "DOC_NOT_FOUND", message: "Document not found." } },
         { status: 404 }
       );
     }
 
-    await db.document.delete({
-      where: { id: params.id },
-    });
-
-    return NextResponse.json({ ok: true });
-  } catch (err: any) {
-    console.error("[API] Failed to delete document:", err);
+    await db.document.delete({ where: { id } });
+    return new NextResponse(null, { status: 204 });
+  } catch (err: unknown) {
+    console.error("[API] Failed to delete document:", err instanceof Error ? err.message : err);
     return NextResponse.json(
-      { error: "Failed to delete document" },
+      { error: { code: "INTERNAL", message: "Failed to delete document." } },
       { status: 500 }
     );
   }

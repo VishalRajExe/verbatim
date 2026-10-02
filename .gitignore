@@ -17,10 +17,12 @@ node_modules
 # Vitest
 /coverage/
 
-# OS
+# OS & Logs
 .DS_Store
 Thumbs.db
 *.pem
+*.log
+scratch/
 
 # Typescript
 *.tsbuildinfo

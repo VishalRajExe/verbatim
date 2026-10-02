@@ -7,167 +7,168 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum DocStatus {
-  QUEUED
-  EXTRACTING
-  CONVERTING
-  INDEXING
-  READY
-  FAILED
+model comparison {
+  id               String             @id
+  docAId           String
+  docBId           String
+  status           String
+  stage            String?
+  summary          String?            @db.LongText
+  stats            Json?
+  errorMessage     String?
+  createdAt        DateTime           @default(now())
+  comparisonchange comparisonchange[]
 }
 
-enum MsgStatus {
-  STREAMING
-  COMPLETE
-  STOPPED
-  ERROR
-}
-
-model Document {
-  id            String                 @id @default(cuid())
-  name          String
-  kind          String                 // "pdf" | "docx"
-  sizeBytes     Int
-  sha256        String?
-  status        DocStatus              @default(QUEUED)
-  stage         String?                // e.g. "Reading page 40 of 150"
-  progress      Int                    @default(0) // 0..100
-  pageCount     Int?
-  charCount     Int?
-  tokenEstimate Int?
-  errorCode     String?                // e.g. NO_TEXT_LAYER
-  errorMessage  String?
-  warnings      Json?                  // { emptyPages: [3,4], furnitureStripped: true }
-  createdAt     DateTime               @default(now())
-  updatedAt     DateTime               @updatedAt
-  file          DocumentFile?
-  text          DocumentText?
-  pages         DocumentPage[]
-  convDocs      ConversationDocument[]
-  quotes        Quote[]
-
-  @@index([status])
-}
-
-model DocumentFile {
-  documentId String   @id
-  original   Bytes    @db.LongBlob
-  rendition  Bytes?   @db.LongBlob      // PDF rendition for DOCX uploads
-  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
-}
-
-model DocumentText {
-  documentId String   @id
-  text       String   @db.LongText
-  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
-}
-
-model DocumentPage {
-  documentId String
-  pageNo     Int                       // 1-based
-  charStart  Int                       // offset inside canonical text
-  charEnd    Int
-  width      Float                     // pdf.js viewport scale 1
-  height     Float
-  items      Json                      // [[start, len, x, y, w, h], ...] relative to page text
-  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
-
-  @@id([documentId, pageNo])
-}
-
-model Conversation {
-  id        String                 @id @default(cuid())
-  title     String
-  kind      String                 // "single" | "multi"
-  createdAt DateTime               @default(now())
-  updatedAt DateTime               @updatedAt
-  documents ConversationDocument[]
-  messages  Message[]
-}
-
-model ConversationDocument {
-  conversationId String
-  documentId     String
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  document       Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
-
-  @@id([conversationId, documentId])
-}
-
-model Message {
-  id             String       @id @default(cuid())
-  conversationId String
-  role           String       // "user" | "assistant"
-  content        String       @db.LongText
-  status         MsgStatus    @default(COMPLETE)
-  coverage       Json?        // per-document coverage
-  errorMessage   String?
-  createdAt      DateTime     @default(now())
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  quotes         Quote[]
-
-  @@index([conversationId])
-}
-
-model Quote {
-  id         String   @id @default(cuid())
-  messageId  String
-  documentId String
-  ref        String   // "Q1" (unique per message)
-  text       String   @db.Text
-  verified   Boolean
-  matchKind  String?  // "exact" | "loose"
-  failReason String?  // NOT_FOUND | TOO_SHORT | TOO_LONG | WRONG_DOCUMENT
-  ranges     Json?    // [{ segment, primary, occurrences:[{start,end,pageStart,pageEnd}] }]
-  message    Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
-  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
-
-  @@index([messageId])
-  @@index([documentId])
-}
-
-model Comparison {
-  id           String             @id @default(cuid())
-  docAId       String
-  docBId       String
-  status       String             // QUEUED | RUNNING | READY | FAILED
-  stage        String?
-  summary      String?            @db.LongText
-  stats        Json?              // counts by type and significance
-  errorMessage String?
-  createdAt    DateTime           @default(now())
-  changes      ComparisonChange[]
-}
-
-model ComparisonChange {
-  id            String     @id @default(cuid())
+model comparisonchange {
+  id            String     @id
   comparisonId  String
   orderIdx      Int
-  type          String     // ADDED | REMOVED | MODIFIED | MOVED
-  significance  String     // HIGH | MEDIUM | LOW | COSMETIC
-  category      String?    // liability | payment | termination ...
+  type          String
+  significance  String
+  category      String?
   title         String
   summary       String     @db.Text
-  summarySource String     // "ai" | "automatic"
+  summarySource String
   aText         String?    @db.Text
   bText         String?    @db.Text
   aStart        Int?
   aEnd          Int?
   bStart        Int?
   bEnd          Int?
-  comparison    Comparison @relation(fields: [comparisonId], references: [id], onDelete: Cascade)
+  comparison    comparison @relation(fields: [comparisonId], references: [id], onDelete: Cascade, map: "ComparisonChange_comparisonId_fkey")
 
-  @@index([comparisonId])
+  @@index([comparisonId], map: "ComparisonChange_comparisonId_idx")
 }
 
-model Redline {
-  id          String   @id @default(cuid())
+model conversation {
+  id                   String                 @id
+  title                String
+  kind                 String
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime
+  conversationdocument conversationdocument[]
+  message              message[]
+}
+
+model conversationdocument {
+  conversationId String
+  documentId     String
+  conversation   conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade, map: "ConversationDocument_conversationId_fkey")
+  document       document     @relation(fields: [documentId], references: [id], onDelete: Cascade, map: "ConversationDocument_documentId_fkey")
+
+  @@id([conversationId, documentId])
+  @@index([documentId], map: "ConversationDocument_documentId_fkey")
+}
+
+model document {
+  id                   String                 @id
+  name                 String
+  kind                 String
+  sizeBytes            Int
+  sha256               String?
+  status               document_status        @default(QUEUED)
+  stage                String?
+  progress             Int                    @default(0)
+  pageCount            Int?
+  charCount            Int?
+  tokenEstimate        Int?
+  errorCode            String?
+  errorMessage         String?
+  warnings             Json?
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime
+  conversationdocument conversationdocument[]
+  documentfile         documentfile?
+  documentpage         documentpage[]
+  documenttext         documenttext?
+  quote                quote[]
+
+  @@index([status], map: "Document_status_idx")
+}
+
+model documentfile {
+  documentId String   @id
+  original   Bytes
+  rendition  Bytes?
+  document   document @relation(fields: [documentId], references: [id], onDelete: Cascade, map: "DocumentFile_documentId_fkey")
+}
+
+model documentpage {
+  documentId String
+  pageNo     Int
+  charStart  Int
+  charEnd    Int
+  width      Float
+  height     Float
+  items      Json
+  document   document @relation(fields: [documentId], references: [id], onDelete: Cascade, map: "DocumentPage_documentId_fkey")
+
+  @@id([documentId, pageNo])
+}
+
+model documenttext {
+  documentId String   @id
+  text       String   @db.LongText
+  document   document @relation(fields: [documentId], references: [id], onDelete: Cascade, map: "DocumentText_documentId_fkey")
+}
+
+model message {
+  id             String         @id
+  conversationId String
+  role           String
+  content        String         @db.LongText
+  status         message_status @default(COMPLETE)
+  coverage       Json?
+  errorMessage   String?
+  createdAt      DateTime       @default(now())
+  conversation   conversation   @relation(fields: [conversationId], references: [id], onDelete: Cascade, map: "Message_conversationId_fkey")
+  quote          quote[]
+
+  @@index([conversationId], map: "Message_conversationId_idx")
+}
+
+model quote {
+  id         String   @id
+  messageId  String
+  documentId String
+  ref        String
+  text       String   @db.Text
+  verified   Boolean
+  matchKind  String?
+  failReason String?
+  ranges     Json?
+  document   document @relation(fields: [documentId], references: [id], onDelete: Cascade, map: "Quote_documentId_fkey")
+  message    message  @relation(fields: [messageId], references: [id], onDelete: Cascade, map: "Quote_messageId_fkey")
+
+  @@index([documentId], map: "Quote_documentId_idx")
+  @@index([messageId], map: "Quote_messageId_idx")
+}
+
+model redline {
+  id          String   @id
   documentId  String
   instruction String   @db.Text
-  edits       Json     // [{ id, target, replacement, reason, verified, include }]
-  status      String   // PROPOSED | APPLIED | FAILED
-  output      Bytes?   @db.LongBlob
+  edits       Json
+  status      String
+  output      Bytes?
   createdAt   DateTime @default(now())
 
-  @@index([documentId])
+  @@index([documentId], map: "Redline_documentId_idx")
+}
+
+enum message_status {
+  STREAMING
+  COMPLETE
+  STOPPED
+  ERROR
+}
+
+enum document_status {
+  QUEUED
+  EXTRACTING
+  CONVERTING
+  INDEXING
+  READY
+  FAILED
 }

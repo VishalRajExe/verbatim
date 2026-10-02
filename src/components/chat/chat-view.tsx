@@ -53,14 +53,35 @@ export function ChatView({
         if (!res.ok) throw new Error("Failed to load conversation");
         const data = await res.json();
         if (!isCancelled) {
-          const loaded: MessageData[] = (data.messages || []).map((m: any) => ({
+          interface RawQuote {
+            id?: string;
+            ref: string;
+            documentId?: string;
+            document?: { name?: string };
+            documentName?: string;
+            text: string;
+            verified: boolean;
+            matchKind?: string | null;
+            failReason?: string | null;
+            ranges?: Array<{ segment?: string; primary?: { start: number; end: number; pageStart: number; pageEnd: number } | null; occurrences?: Array<{ start: number; end: number; pageStart: number; pageEnd: number }> }>;
+          }
+          interface RawMessage {
+            id: string;
+            role: "user" | "assistant";
+            content: string;
+            status: "STREAMING" | "COMPLETE" | "STOPPED" | "ERROR";
+            errorMessage?: string | null;
+            coverage?: CoverageDoc[] | null;
+            quotes?: RawQuote[];
+          }
+          const loaded: MessageData[] = (data.messages || []).map((m: RawMessage) => ({
             id: m.id,
             role: m.role,
             content: m.content,
             status: m.status,
             errorMessage: m.errorMessage,
             coverage: m.coverage as CoverageDoc[] | null,
-            quotes: (m.quotes || []).map((q: any) => ({
+            quotes: (m.quotes || []).map((q: RawQuote) => ({
               id: q.id,
               ref: q.ref,
               documentId: q.documentId || documentId,
@@ -193,6 +214,7 @@ export function ChatView({
                 current.stage = event.stage;
                 if ("done" in event) current.stageDone = event.done;
                 if ("total" in event) current.stageTotal = event.total;
+                if ("message" in event) current.stageMessage = event.message;
                 break;
 
               case "quotes":

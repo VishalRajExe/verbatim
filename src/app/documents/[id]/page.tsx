@@ -24,6 +24,7 @@ export default async function DocumentPage({ params }: DocumentPageProps) {
       stage: true,
       progress: true,
       errorMessage: true,
+      file: { select: { rendition: true } },
     },
   });
 
@@ -131,6 +132,7 @@ export default async function DocumentPage({ params }: DocumentPageProps) {
       documentKind={doc.kind}
       initialConversations={summaries}
       initialActiveConversationId={initialActiveId}
+      hasPdfRendition={doc.kind === "pdf" || !!doc.file?.rendition}
     />
   );
 }

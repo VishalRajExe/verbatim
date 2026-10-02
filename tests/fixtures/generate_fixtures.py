@@ -79,6 +79,9 @@ for m, d, a in milestones:
     row_cells[1].text = d
     row_cells[2].text = a
 
+h4 = doc_docx.add_heading("Section 4. Term and Termination", level=1)
+doc_docx.add_paragraph("Either party may terminate this Agreement for convenience upon thirty (30) days prior written notice to the other party.")
+
 doc_docx.save(docx_path)
 print(f"Generated DOCX: {docx_path}")
 
@@ -131,4 +134,24 @@ c.rect(50, 50, 500, 700, fill=1, stroke=1)
 c.showPage()
 c.save()
 print(f"Generated Scanned PDF: {scanned_path}")
+
+# 5. Generate synthetic DOCX with repeated values for ambiguous target tests (AED 100,000 appears twice)
+repeated_docx_path = os.path.join(fixtures_dir, "synthetic_liability_repeated.docx")
+doc_repeated = docx.Document()
+doc_repeated.add_heading("MASTER SERVICES AGREEMENT", level=0)
+doc_repeated.add_paragraph("This Master Services Agreement is entered into between Client and Supplier.")
+doc_repeated.add_heading("Section 1. Scope of Work", level=1)
+doc_repeated.add_paragraph("1. Supplier shall provide software development and consulting services.")
+doc_repeated.add_paragraph("2. Deliverables shall be provided in accordance with the project schedule.")
+doc_repeated.add_heading("Section 2. Limitation of Liability", level=1)
+doc_repeated.add_paragraph("Supplier's aggregate liability under this Agreement shall not exceed AED 100,000.")
+doc_repeated.add_heading("Section 3. Payment Schedule", level=1)
+doc_repeated.add_paragraph("Invoices shall be paid within thirty (30) days of receipt.")
+doc_repeated.add_heading("Section 4. Term and Termination", level=1)
+doc_repeated.add_paragraph("Either party may terminate this Agreement for convenience upon thirty (30) days prior written notice to the other party.")
+doc_repeated.add_heading("Section 5. Annual Maintenance Fee", level=1)
+doc_repeated.add_paragraph("Annual Support and Maintenance Fee shall be AED 100,000 payable annually in advance.")
+doc_repeated.save(repeated_docx_path)
+print(f"Generated Repeated DOCX: {repeated_docx_path}")
+
 

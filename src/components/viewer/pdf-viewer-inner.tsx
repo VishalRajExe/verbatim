@@ -180,9 +180,9 @@ export default function PdfViewerInner({
             }
           }
         }, 300);
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (isMounted) {
-          setLocateError(err.message || "Failed to locate passage");
+          setLocateError(err instanceof Error ? err.message : "Failed to locate passage");
         }
       } finally {
         if (isMounted) {
