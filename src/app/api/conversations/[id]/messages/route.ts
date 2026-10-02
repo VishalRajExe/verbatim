@@ -62,20 +62,21 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const primaryDoc = conversation.documents[0]?.document;
-    if (!primaryDoc) {
+    const docs = conversation.documents.map((d) => d.document);
+    if (docs.length === 0) {
       return NextResponse.json(
         { error: { code: "NO_DOCUMENT", message: "No document attached to conversation." } },
         { status: 400 }
       );
     }
 
-    if (primaryDoc.status !== "READY") {
+    const notReady = docs.find((d) => d.status !== "READY");
+    if (notReady) {
       return NextResponse.json(
         {
           error: {
             code: "DOC_NOT_READY",
-            message: "Document is still processing or failed.",
+            message: `Document "${notReady.name}" is still processing or failed.`,
           },
         },
         { status: 409 }
@@ -113,8 +114,9 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
         try {
           await runQaPipeline({
             conversationId: id,
-            documentId: primaryDoc.id,
-            documentName: primaryDoc.name,
+            documents: docs.map((d) => ({ id: d.id, name: d.name })),
+            documentId: docs[0].id,
+            documentName: docs[0].name,
             question,
             signal: req.signal,
             emit,

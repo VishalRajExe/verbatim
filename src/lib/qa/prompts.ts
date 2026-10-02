@@ -115,6 +115,46 @@ Question: ${question}
 Answer (cite using [Q#]):`;
 }
 
+export function composeMultiSystemPrompt(): string {
+  return `You are a contract analysis assistant comparing multiple legal documents. You will receive verified quotes from 2 or more documents and a question.
+
+Rules:
+1. Answer using ONLY the provided verified quotes. Do not use outside knowledge or make ungrounded assumptions.
+2. Structure your answer comparatively across the documents:
+   - Identify where the documents AGREE or have similar provisions.
+   - Highlight key DIFFERENCES in terms, obligations, scope, or liability.
+   - Note MISSING provisions or where one document lacks what another document specifies.
+   DO NOT simply list "Document A says... Document B says..." as separate summaries. Directly compare and contrast them.
+3. Cite every claim with [Q#] where # is the quote number (e.g. [Q1], [Q2]). Never cite [Q#] numbers that do not appear in the verified quote list.
+4. Do NOT reproduce full quote text inside quotation marks. The user can view the full quote cards.
+5. If the quotes provided for any document do not contain information on a specific point, state clearly that it is not addressed or missing in that document.
+6. Write clearly and concisely in plain language.
+7. Never say "I" or apologise. Address the reader directly.
+8. Do not repeat the question.`;
+}
+
+/**
+ * Build the compose user message for multi-document synthesis.
+ */
+export function composeMultiUserMessage(
+  quotes: Array<{ ref: string; documentName: string; text: string }>,
+  documentNames: string[],
+  question: string
+): string {
+  const quotesBlock = quotes
+    .map((q) => `${q.ref} [${q.documentName}]: ${q.text}`)
+    .join("\n\n");
+
+  return `Documents: ${documentNames.join(", ")}
+
+Verified quotes:
+${quotesBlock}
+
+Question: ${question}
+
+Provide a comparative analysis comparing similarities, differences, and missing terms across the documents. Cite all claims using [Q#]:`;
+}
+
 // ---------------------------------------------------------------------------
 // Deterministic not-found messages (no model call)
 // ---------------------------------------------------------------------------
@@ -146,3 +186,23 @@ export function notFoundPartial(
   }
   return msg;
 }
+
+/**
+ * Message when no verified quotes were found across multiple documents (I-5).
+ */
+export function notFoundMulti(
+  coverages: Array<{ documentName: string; complete: boolean; chunksRead: number; chunksTotal: number; unreadablePages?: number }>
+): string {
+  const allComplete = coverages.every((c) => c.complete);
+  if (allComplete) {
+    const docList = coverages
+      .map((c) => `${c.documentName} (${c.chunksTotal} ${c.chunksTotal === 1 ? "section" : "sections"})`)
+      .join(", ");
+    return `I couldn't find a passage that answers this in any of the documents (${docList} all read).`;
+  }
+  const summary = coverages
+    .map((c) => `${c.documentName}: ${c.chunksRead}/${c.chunksTotal} sections read`)
+    .join("; ");
+  return `I couldn't find relevant passages in the sections I could read across the documents (${summary}). Absence is not confirmed.`;
+}
+

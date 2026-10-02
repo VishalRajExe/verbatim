@@ -7,6 +7,7 @@ import { ArrowLeft, Plus, MessageSquare, Trash2 } from "lucide-react";
 export interface ConversationSummary {
   id: string;
   title: string;
+  kind?: string;
   createdAt: string;
   updatedAt: string;
   messageCount: number;
@@ -110,7 +111,14 @@ export function ConversationRail({
                     }`}
                   />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate">{c.title || "Contract chat"}</p>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <p className="truncate flex-1">{c.title || "Contract chat"}</p>
+                      {c.kind === "multi" && (
+                        <span className="text-[9px] font-semibold uppercase px-1 rounded bg-amber-50 text-amber-800 border border-amber-200 shrink-0">
+                          Multi
+                        </span>
+                      )}
+                    </div>
                     <p className="text-[10px] text-ink-faint">
                       {c.messageCount} {c.messageCount === 1 ? "message" : "messages"}
                     </p>

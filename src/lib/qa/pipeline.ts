@@ -21,8 +21,11 @@ import {
   extractUserMessage,
   composeSystemPrompt,
   composeUserMessage,
+  composeMultiSystemPrompt,
+  composeMultiUserMessage,
   notFoundComplete,
   notFoundPartial,
+  notFoundMulti,
 } from "@/lib/qa/prompts";
 import { ExtractResponseSchema } from "@/lib/qa/schemas";
 import { chunkDocument } from "@/lib/qa/chunker";
@@ -43,10 +46,16 @@ import { verifyQuote } from "@/lib/verify/verify-quote";
 // Types
 // ---------------------------------------------------------------------------
 
+export interface PipelineDocument {
+  id: string;
+  name: string;
+}
+
 export interface PipelineContext {
   conversationId: string;
-  documentId: string;
-  documentName: string;
+  documents?: PipelineDocument[];
+  documentId?: string;
+  documentName?: string;
   question: string;
   /** AbortSignal from the incoming HTTP request. */
   signal: AbortSignal;
@@ -56,6 +65,8 @@ export interface PipelineContext {
 
 interface VerifiedQuote {
   ref: string; // "Q1", "Q2", …
+  documentId: string;
+  documentName: string;
   text: string;
   verified: true;
   matchKind: string;
@@ -70,6 +81,8 @@ interface VerifiedQuote {
 
 interface UnverifiedQuote {
   ref: string;
+  documentId: string;
+  documentName: string;
   text: string;
   verified: false;
   matchKind: null;
@@ -152,7 +165,7 @@ async function extractFromChunk(
 function dedupeVerified(quotes: VerifiedQuote[]): VerifiedQuote[] {
   const seen = new Set<string>();
   return quotes.filter((q) => {
-    const key = `${q.canonicalStart}-${q.canonicalEnd}`;
+    const key = `${q.documentId}:${q.canonicalStart}-${q.canonicalEnd}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -163,7 +176,7 @@ function dedupeVerified(quotes: VerifiedQuote[]): VerifiedQuote[] {
 function dedupeUnverified(quotes: UnverifiedQuote[]): UnverifiedQuote[] {
   const seen = new Set<string>();
   return quotes.filter((q) => {
-    const key = q.text.trim().toLowerCase();
+    const key = `${q.documentId}:${q.text.trim().toLowerCase()}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -175,96 +188,95 @@ function dedupeUnverified(quotes: UnverifiedQuote[]): UnverifiedQuote[] {
 // ---------------------------------------------------------------------------
 
 /**
- * Run the full QA pipeline for a single-document conversation.
+ * Run the full QA pipeline for a single- or multi-document conversation.
  * Writes NDJSON events via ctx.emit(); saves Message + Quote rows.
  *
  * @returns messageId of the saved message.
  */
 export async function runQaPipeline(ctx: PipelineContext): Promise<string> {
-  const { conversationId, documentId, documentName, question, signal, emit } =
-    ctx;
+  const { conversationId, question, signal, emit } = ctx;
   const client = getLlmClient();
   const model = getLlmModel();
 
   // ------------------------------------------------------------------
-  // 1. Load document text and pages
+  // 1. Resolve target documents (single or multi)
   // ------------------------------------------------------------------
-  const [docText, doc, pages] = await Promise.all([
-    db.documentText.findUnique({
-      where: { documentId },
-      select: { text: true },
-    }),
-    db.document.findUnique({
-      where: { id: documentId },
-      select: { pageCount: true, warnings: true },
-    }),
-    db.documentPage.findMany({
-      where: { documentId },
-      select: { pageNo: true, charStart: true, charEnd: true },
-      orderBy: { pageNo: "asc" },
-    }),
-  ]);
+  const targetDocs: PipelineDocument[] =
+    ctx.documents && ctx.documents.length > 0
+      ? ctx.documents
+      : [{ id: ctx.documentId!, name: ctx.documentName! }];
 
-  if (!docText) throw new Error("Document text not found");
-
-  const unreadablePages = (() => {
-    if (!doc?.warnings) return 0;
-    const w = doc.warnings as { emptyPages?: number[] };
-    return Array.isArray(w.emptyPages) ? w.emptyPages.length : 0;
-  })();
-
-  // ------------------------------------------------------------------
-  // 2. Chunk the document
-  // ------------------------------------------------------------------
-  const chunks = chunkDocument(docText.text);
-  let coverage = initCoverage(
-    documentId,
-    documentName,
-    chunks.length,
-    doc?.pageCount ?? pages.length,
-    unreadablePages
-  );
-
-  // ------------------------------------------------------------------
-  // 3. Extract (map over chunks with LLM_MAX_CONCURRENCY)
-  // ------------------------------------------------------------------
+  const allCoverages: CoverageDoc[] = [];
   const allRawQuotes: Array<{
     text: string;
     chunkStart: number;
     chunkEnd: number;
+    documentId: string;
+    documentName: string;
   }> = [];
 
-  const successfulChunks = new Set<number>();
-  const failedChunks = new Set<number>();
-  let progressCount = 0;
+  // ------------------------------------------------------------------
+  // 2. Per-document extraction (TASK 3)
+  // ------------------------------------------------------------------
+  for (const targetDoc of targetDocs) {
+    if (signal.aborted) break;
 
-  // Emit initial progress
-  emit(
-    encodeEvent({
-      type: "status",
-      stage: "reading",
-      documentId,
-      done: 0,
-      total: chunks.length,
-    })
-  );
+    const [docText, docRecord, pages] = await Promise.all([
+      db.documentText.findUnique({
+        where: { documentId: targetDoc.id },
+        select: { text: true },
+      }),
+      db.document.findUnique({
+        where: { id: targetDoc.id },
+        select: { pageCount: true, warnings: true },
+      }),
+      db.documentPage.findMany({
+        where: { documentId: targetDoc.id },
+        select: { pageNo: true, charStart: true, charEnd: true },
+        orderBy: { pageNo: "asc" },
+      }),
+    ]);
 
-  await Promise.all(
-    chunks.map(async (chunk) => {
-      if (signal.aborted) return;
+    if (!docText) {
+      console.error(`Document text not found for doc ${targetDoc.id}`);
+      continue;
+    }
 
-        emit(
-          encodeEvent({
-            type: "status",
-            stage: "reading",
-            documentId,
-            done: progressCount + 1,
-            total: chunks.length,
-          })
-        );
+    const unreadablePages = (() => {
+      if (!docRecord?.warnings) return 0;
+      const w = docRecord.warnings as { emptyPages?: number[] };
+      return Array.isArray(w.emptyPages) ? w.emptyPages.length : 0;
+    })();
+
+    const chunks = chunkDocument(docText.text);
+    let coverage = initCoverage(
+      targetDoc.id,
+      targetDoc.name,
+      chunks.length,
+      docRecord?.pageCount ?? pages.length,
+      unreadablePages
+    );
+
+    const successfulChunks = new Set<number>();
+    const failedChunks = new Set<number>();
+    let progressCount = 0;
+
+    // Emit initial progress for this document
+    emit(
+      encodeEvent({
+        type: "status",
+        stage: "reading",
+        documentId: targetDoc.id,
+        done: 0,
+        total: chunks.length,
+      })
+    );
+
+    await Promise.all(
+      chunks.map(async (chunk) => {
+        if (signal.aborted) return;
 
         try {
-          // Test hook: force failure of a chosen chunk
           const failHook =
             process.env.VERBATIM_TEST_FAIL_CHUNK ||
             env.VERBATIM_TEST_FAIL_CHUNK;
@@ -278,12 +290,12 @@ export async function runQaPipeline(ctx: PipelineContext): Promise<string> {
           }
 
           const extracted = await extractFromChunk(
-            documentName,
+            targetDoc.name,
             chunk.text,
             question,
             chunk.charStart,
             chunk.charEnd,
-            documentId,
+            targetDoc.id,
             signal
           );
 
@@ -292,14 +304,15 @@ export async function runQaPipeline(ctx: PipelineContext): Promise<string> {
               text: q.text,
               chunkStart: chunk.charStart,
               chunkEnd: chunk.charEnd,
+              documentId: targetDoc.id,
+              documentName: targetDoc.name,
             });
           }
           successfulChunks.add(chunk.index);
         } catch (err: unknown) {
           if (signal.aborted) return;
-          // Log error metadata only — never log document text (I-9).
           console.error(`[qa] chunk ${chunk.index} extraction failed:`, {
-            documentId,
+            documentId: targetDoc.id,
             chunk: chunk.index,
             error: err instanceof Error ? err.message : String(err),
           });
@@ -310,27 +323,30 @@ export async function runQaPipeline(ctx: PipelineContext): Promise<string> {
             encodeEvent({
               type: "status",
               stage: "reading",
-              documentId,
+              documentId: targetDoc.id,
               done: Math.min(progressCount, chunks.length),
               total: chunks.length,
             })
           );
         }
       })
-  );
+    );
 
-  coverage = {
-    ...coverage,
-    chunksRead: successfulChunks.size,
-    failedChunks: Array.from(failedChunks).sort((a, b) => a - b),
-    complete:
-      successfulChunks.size === chunks.length &&
-      failedChunks.size === 0 &&
-      coverage.unreadablePages === 0,
-  };
+    coverage = {
+      ...coverage,
+      chunksRead: successfulChunks.size,
+      failedChunks: Array.from(failedChunks).sort((a, b) => a - b),
+      complete:
+        successfulChunks.size === chunks.length &&
+        failedChunks.size === 0 &&
+        coverage.unreadablePages === 0,
+    };
+
+    allCoverages.push(coverage);
+  }
 
   // ------------------------------------------------------------------
-  // 4. Verify
+  // 3. Verify evidence (TASK 4 - Rule I-7)
   // ------------------------------------------------------------------
   emit(encodeEvent({ type: "status", stage: "verifying" }));
 
@@ -341,17 +357,19 @@ export async function runQaPipeline(ctx: PipelineContext): Promise<string> {
   for (const raw of allRawQuotes) {
     if (signal.aborted) break;
 
+    // Rule I-7: verifyQuote using ONLY its attributed documentId
     const result = await verifyQuote(
       raw.text,
-      documentId,
+      raw.documentId,
       raw.chunkStart,
       raw.chunkEnd
     );
 
     if (result.verified) {
-      // Ref assignment (Q1, Q2, …) happens after dedup below.
       quoteResults.push({
         ref: `__tmp_v_${verifiedIndex++}`,
+        documentId: raw.documentId,
+        documentName: raw.documentName,
         text: raw.text,
         verified: true,
         matchKind: result.matchKind!,
@@ -365,6 +383,8 @@ export async function runQaPipeline(ctx: PipelineContext): Promise<string> {
     } else {
       quoteResults.push({
         ref: `__tmp_u_${unverifiedIndex++}`,
+        documentId: raw.documentId,
+        documentName: raw.documentName,
         text: raw.text,
         verified: false,
         matchKind: null,
@@ -373,13 +393,13 @@ export async function runQaPipeline(ctx: PipelineContext): Promise<string> {
     }
   }
 
-  // Dedup verified quotes by canonical range.
+  // Dedup verified quotes by canonical range within the document.
   const verifiedRaw = quoteResults.filter(
     (q): q is VerifiedQuote => q.verified
   );
   const deduped = dedupeVerified(verifiedRaw);
 
-  // Assign final Q1…Qn refs.
+  // Assign final sequential Q1…Qn refs across the answer.
   const verified: VerifiedQuote[] = deduped.map((q, i) => ({
     ...q,
     ref: `Q${i + 1}`,
@@ -390,21 +410,19 @@ export async function runQaPipeline(ctx: PipelineContext): Promise<string> {
   const unverified = dedupeUnverified(unverifiedRaw);
 
   // ------------------------------------------------------------------
-  // 5. Persist Quote rows
+  // 4. Persist Message and Quote rows
   // ------------------------------------------------------------------
-  // Save message in STREAMING state first so we have a messageId.
   const message = await db.message.create({
     data: {
       conversationId,
       role: "assistant",
       content: "",
       status: "STREAMING",
-      coverage: [coverage] as object,
+      coverage: allCoverages as object,
     },
   });
   const messageId = message.id;
 
-  // Save all quotes (verified + unverified) with proper refs.
   const allForDb = [
     ...verified,
     ...unverified.map((u, i) => ({ ...u, ref: `U${i + 1}` })),
@@ -413,11 +431,11 @@ export async function runQaPipeline(ctx: PipelineContext): Promise<string> {
     await db.quote.createMany({
       data: allForDb.map((q) => ({
         messageId,
-        documentId,
+        documentId: q.documentId,
         ref: q.ref,
         text: q.text,
         verified: q.verified,
-        matchKind: q.verified ? q.matchKind : null,
+        matchKind: q.verified ? (q as VerifiedQuote).matchKind : null,
         failReason: q.verified ? null : (q as UnverifiedQuote).failReason,
         ranges: q.verified ? ((q as VerifiedQuote).ranges as any) : undefined,
       })),
@@ -425,14 +443,14 @@ export async function runQaPipeline(ctx: PipelineContext): Promise<string> {
   }
 
   // ------------------------------------------------------------------
-  // 6. Emit quotes and coverage events
+  // 5. Emit quotes and coverage events
   // ------------------------------------------------------------------
   const quoteEventItems: QuoteEventItem[] = [
     ...verified.map(
       (q): QuoteEventItem => ({
         ref: q.ref,
-        documentId,
-        documentName,
+        documentId: q.documentId,
+        documentName: q.documentName,
         verified: true,
         matchKind: q.matchKind,
         failReason: null,
@@ -446,8 +464,8 @@ export async function runQaPipeline(ctx: PipelineContext): Promise<string> {
     ...unverified.map(
       (q, i): QuoteEventItem => ({
         ref: `U${i + 1}`,
-        documentId,
-        documentName,
+        documentId: q.documentId,
+        documentName: q.documentName,
         verified: false,
         matchKind: null,
         failReason: q.failReason,
@@ -460,24 +478,29 @@ export async function runQaPipeline(ctx: PipelineContext): Promise<string> {
   ];
 
   emit(encodeEvent({ type: "quotes", quotes: quoteEventItems }));
-  emit(encodeEvent({ type: "coverage", coverage: [coverage] }));
+  emit(encodeEvent({ type: "coverage", coverage: allCoverages }));
 
   // ------------------------------------------------------------------
-  // 7. Compose (or deterministic not-found)
+  // 6. Compose (or deterministic not-found) (TASK 5)
   // ------------------------------------------------------------------
   let finalContent = "";
   let finalStatus: "complete" | "stopped" | "error" = "complete";
 
   if (verified.length === 0) {
-    // Deterministic not-found — no model call (Architecture §8, I-3).
-    finalContent = coverage.complete
-      ? notFoundComplete(documentName, coverage.chunksTotal)
-      : notFoundPartial(
-          documentName,
-          coverage.chunksRead,
-          coverage.chunksTotal,
-          coverage.unreadablePages
-        );
+    // Deterministic not-found — no model call (Architecture §8, I-3, I-5)
+    if (targetDocs.length === 1) {
+      const cov = allCoverages[0];
+      finalContent = cov?.complete
+        ? notFoundComplete(targetDocs[0].name, cov.chunksTotal)
+        : notFoundPartial(
+            targetDocs[0].name,
+            cov?.chunksRead ?? 0,
+            cov?.chunksTotal ?? 0,
+            cov?.unreadablePages
+          );
+    } else {
+      finalContent = notFoundMulti(allCoverages);
+    }
     emit(encodeEvent({ type: "token", text: finalContent }));
   } else {
     // Compose using ONLY verified quotes (I-3).
@@ -485,6 +508,26 @@ export async function runQaPipeline(ctx: PipelineContext): Promise<string> {
 
     const verifiedRefs = new Set(verified.map((q) => q.ref));
     const filter = createCitationFilter(verifiedRefs);
+
+    const isMulti = targetDocs.length > 1;
+    const systemPrompt = isMulti
+      ? composeMultiSystemPrompt()
+      : composeSystemPrompt();
+    const userMessage = isMulti
+      ? composeMultiUserMessage(
+          verified.map((q) => ({
+            ref: q.ref,
+            documentName: q.documentName,
+            text: q.text,
+          })),
+          targetDocs.map((d) => d.name),
+          question
+        )
+      : composeUserMessage(
+          verified.map((q) => ({ ref: q.ref, text: q.text })),
+          targetDocs[0].name,
+          question
+        );
 
     try {
       const stream = await withRetry(
@@ -496,15 +539,8 @@ export async function runQaPipeline(ctx: PipelineContext): Promise<string> {
                 temperature: 0.2,
                 stream: true,
                 messages: [
-                  { role: "system", content: composeSystemPrompt() },
-                  {
-                    role: "user",
-                    content: composeUserMessage(
-                      verified.map((q) => ({ ref: q.ref, text: q.text })),
-                      documentName,
-                      question
-                    ),
-                  },
+                  { role: "system", content: systemPrompt },
+                  { role: "user", content: userMessage },
                 ],
               },
               { signal }
@@ -554,18 +590,19 @@ export async function runQaPipeline(ctx: PipelineContext): Promise<string> {
   }
 
   // ------------------------------------------------------------------
-  // 8. Persist final message state
+  // 7. Persist final message state
   // ------------------------------------------------------------------
   await db.message.update({
     where: { id: messageId },
     data: {
       content: finalContent,
-      status: finalStatus === "complete"
-        ? "COMPLETE"
-        : finalStatus === "stopped"
-        ? "STOPPED"
-        : "ERROR",
-      coverage: [coverage] as object,
+      status:
+        finalStatus === "complete"
+          ? "COMPLETE"
+          : finalStatus === "stopped"
+          ? "STOPPED"
+          : "ERROR",
+      coverage: allCoverages as object,
     },
   });
 

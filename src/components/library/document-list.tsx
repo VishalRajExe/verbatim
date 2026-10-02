@@ -3,14 +3,16 @@
 import React, { useState } from "react";
 import useSWR from "swr";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   FileText,
   Trash2,
   ExternalLink,
   AlertTriangle,
-  FileCheck2,
   Calendar,
   Layers,
+  MessageSquareText,
+  X,
 } from "lucide-react";
 import { StatusPipeline, DocStatus } from "./status-pipeline";
 import { DeleteConfirmDialog } from "./delete-dialog";
@@ -55,9 +57,13 @@ function formatDate(isoString: string): string {
   }
 }
 
+const MAX_DOCS = 5;
+
 export function DocumentList({ initialData }: { initialData?: DocumentItem[] }) {
+  const router = useRouter();
   const [docToDelete, setDocToDelete] = useState<DocumentItem | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   // SWR polling: poll every 1500ms while any document is not READY or FAILED
   const { data, mutate } = useSWR<{ documents: DocumentItem[] }>(
@@ -87,6 +93,7 @@ export function DocumentList({ initialData }: { initialData?: DocumentItem[] }) 
       });
 
       if (res.ok) {
+        setSelectedIds((prev) => prev.filter((id) => id !== docToDelete.id));
         setDocToDelete(null);
         mutate();
       }
@@ -95,6 +102,22 @@ export function DocumentList({ initialData }: { initialData?: DocumentItem[] }) 
     } finally {
       setIsDeleting(false);
     }
+  };
+
+  const toggleSelect = (id: string, isReady: boolean) => {
+    if (!isReady) return;
+    setSelectedIds((prev) => {
+      if (prev.includes(id)) {
+        return prev.filter((item) => item !== id);
+      }
+      if (prev.length >= MAX_DOCS) return prev;
+      return [...prev, id];
+    });
+  };
+
+  const handleAskAcross = () => {
+    if (selectedIds.length < 2) return;
+    router.push(`/ask?docs=${selectedIds.join(",")}`);
   };
 
   // Screen reader live status announcement
@@ -110,13 +133,46 @@ export function DocumentList({ initialData }: { initialData?: DocumentItem[] }) 
         {liveStatusText}
       </div>
 
-      <div className="flex items-center justify-between pb-2 border-b border-line">
+      {/* Header and Multi-document Action Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-2 border-b border-line">
         <h2 className="text-lg font-serif font-semibold text-ink">
           Documents{" "}
           <span className="text-xs font-sans font-normal text-ink-muted tabular-nums">
             ({documents.length})
           </span>
         </h2>
+
+        {selectedIds.length > 0 && (
+          <div className="flex items-center gap-2 bg-surface-subtle border border-line px-3 py-1.5 rounded-lg text-xs animate-in fade-in duration-200">
+            <span className="font-medium text-ink">
+              {selectedIds.length} {selectedIds.length === 1 ? "document" : "documents"} selected
+            </span>
+
+            {selectedIds.length < 2 ? (
+              <span className="text-ink-muted">
+                (select at least 2 to ask across)
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={handleAskAcross}
+                className="inline-flex items-center gap-1.5 px-3 py-1 bg-accent text-on-accent font-medium rounded-md hover:bg-accent/90 transition-colors shadow-sm"
+              >
+                <MessageSquareText size={14} />
+                <span>Ask across documents ({selectedIds.length})</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setSelectedIds([])}
+              className="p-1 text-ink-muted hover:text-ink rounded transition-colors ml-1"
+              title="Clear selection"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        )}
       </div>
 
       {documents.length === 0 ? (
@@ -136,58 +192,81 @@ export function DocumentList({ initialData }: { initialData?: DocumentItem[] }) 
           {documents.map((doc) => {
             const isReady = doc.status === "READY";
             const isFailed = doc.status === "FAILED";
+            const isSelected = selectedIds.includes(doc.id);
+            const isMaxReached = selectedIds.length >= MAX_DOCS && !isSelected;
             const emptyPages = doc.warnings?.emptyPages || [];
 
             return (
               <div
                 key={doc.id}
-                className="p-5 hover:bg-surface-subtle/50 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4"
+                className={`p-5 hover:bg-surface-subtle/50 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4 ${
+                  isSelected ? "bg-accent-soft/30" : ""
+                }`}
               >
-                {/* Document Information */}
-                <div className="space-y-1.5 min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`text-[10px] font-semibold tracking-wider uppercase px-2 py-0.5 rounded ${
-                        doc.kind === "pdf"
-                          ? "bg-red-50 text-red-700 border border-red-200"
-                          : "bg-blue-50 text-blue-700 border border-blue-200"
-                      }`}
-                    >
-                      {doc.kind}
-                    </span>
-                    <h3 className="text-base font-semibold text-ink truncate" title={doc.name}>
-                      {doc.name}
-                    </h3>
+                {/* Selection Checkbox & Document Information */}
+                <div className="flex items-start gap-3 min-w-0 flex-1">
+                  <div className="pt-0.5 shrink-0">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      disabled={!isReady || isMaxReached}
+                      onChange={() => toggleSelect(doc.id, isReady)}
+                      title={
+                        !isReady
+                          ? "Only READY documents can be selected for cross-document questions"
+                          : isMaxReached
+                          ? `Maximum ${MAX_DOCS} documents can be selected`
+                          : `Select ${doc.name}`
+                      }
+                      className="h-4 w-4 rounded border-line-strong text-accent focus:ring-accent disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
+                    />
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-muted">
-                    <span className="flex items-center gap-1">
-                      <Calendar size={13} className="text-ink-faint" />
-                      {formatDate(doc.createdAt)}
-                    </span>
-                    <span>{formatBytes(doc.sizeBytes)}</span>
-                    {doc.pageCount !== null && (
-                      <span className="flex items-center gap-1 tabular-nums font-mono">
-                        <Layers size={13} className="text-ink-faint" />
-                        {doc.pageCount} {doc.pageCount === 1 ? "page" : "pages"}
+                  <div className="space-y-1.5 min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`text-[10px] font-semibold tracking-wider uppercase px-2 py-0.5 rounded ${
+                          doc.kind === "pdf"
+                            ? "bg-red-50 text-red-700 border border-red-200"
+                            : "bg-blue-50 text-blue-700 border border-blue-200"
+                        }`}
+                      >
+                        {doc.kind}
                       </span>
+                      <h3 className="text-base font-semibold text-ink truncate" title={doc.name}>
+                        {doc.name}
+                      </h3>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-muted">
+                      <span className="flex items-center gap-1">
+                        <Calendar size={13} className="text-ink-faint" />
+                        {formatDate(doc.createdAt)}
+                      </span>
+                      <span>{formatBytes(doc.sizeBytes)}</span>
+                      {doc.pageCount !== null && (
+                        <span className="flex items-center gap-1 tabular-nums font-mono">
+                          <Layers size={13} className="text-ink-faint" />
+                          {doc.pageCount} {doc.pageCount === 1 ? "page" : "pages"}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Empty pages warning (FR-1.5) */}
+                    {emptyPages.length > 0 && (
+                      <div className="pt-1">
+                        <span
+                          className="inline-flex items-center gap-1.5 text-xs font-medium text-caution bg-caution-soft px-2.5 py-0.5 rounded border border-caution-line"
+                          role="alert"
+                        >
+                          <AlertTriangle size={13} className="shrink-0" />
+                          <span>
+                            {emptyPages.length} {emptyPages.length === 1 ? "page" : "pages"} had no text and are not searchable
+                          </span>
+                        </span>
+                      </div>
                     )}
                   </div>
-
-                  {/* Empty pages warning (FR-1.5) */}
-                  {emptyPages.length > 0 && (
-                    <div className="pt-1">
-                      <span
-                        className="inline-flex items-center gap-1.5 text-xs font-medium text-caution bg-caution-soft px-2.5 py-0.5 rounded border border-caution-line"
-                        role="alert"
-                      >
-                        <AlertTriangle size={13} className="shrink-0" />
-                        <span>
-                          {emptyPages.length} {emptyPages.length === 1 ? "page" : "pages"} had no text and are not searchable
-                        </span>
-                      </span>
-                    </div>
-                  )}
                 </div>
 
                 {/* Status Pipeline / Stage */}

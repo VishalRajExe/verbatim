@@ -43,6 +43,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
                 id: true,
                 ref: true,
                 documentId: true,
+                document: { select: { id: true, name: true } },
                 text: true,
                 verified: true,
                 matchKind: true,

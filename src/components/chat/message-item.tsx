@@ -123,6 +123,7 @@ export function MessageItem({
                 refId={q.ref}
                 text={q.text}
                 verified={true}
+                documentName={q.documentName}
                 matchKind={q.matchKind}
                 pageStart={q.pageStart}
                 pageEnd={q.pageEnd}
@@ -168,6 +169,7 @@ export function MessageItem({
                   refId={q.ref}
                   text={q.text}
                   verified={false}
+                  documentName={q.documentName}
                   failReason={q.failReason}
                 />
               ))}

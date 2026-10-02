@@ -13,9 +13,10 @@ export const dynamic = "force-dynamic";
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
-  const documentId = params.id;
+  const resolved = await Promise.resolve(params);
+  const documentId = resolved.id;
 
   const doc = await db.document.findUnique({
     where: { id: documentId },

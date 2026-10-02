@@ -15,6 +15,8 @@ export function CoverageBadge({ coverage }: CoverageBadgeProps) {
     <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-line/60">
       {coverage.map((doc, idx) => {
         const isComplete = doc.complete;
+        const isMulti = coverage.length > 1;
+        const docPrefix = isMulti ? `${doc.documentName}: ` : "";
 
         return (
           <div
@@ -31,6 +33,7 @@ export function CoverageBadge({ coverage }: CoverageBadgeProps) {
               <AlertTriangle size={13} className="text-caution shrink-0" />
             )}
             <span>
+              {docPrefix}
               {isComplete
                 ? `Read all ${doc.chunksTotal} ${
                     doc.chunksTotal === 1 ? "section" : "sections"

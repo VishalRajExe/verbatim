@@ -7,6 +7,7 @@ export interface QuoteCardProps {
   refId: string; // e.g. "Q1", "U1"
   text: string;
   verified: boolean;
+  documentName?: string;
   matchKind?: string | null;
   pageStart?: number | null;
   pageEnd?: number | null;
@@ -22,6 +23,7 @@ export function QuoteCard({
   refId,
   text,
   verified,
+  documentName,
   matchKind,
   pageStart,
   pageEnd,
@@ -75,7 +77,7 @@ export function QuoteCard({
       role={verified ? "button" : "region"}
       aria-label={
         verified
-          ? `Verified quote ${refId}, ${pageLabel || "document passage"}`
+          ? `Verified quote ${refId}, ${documentName ? `${documentName}, ` : ""}${pageLabel || "document passage"}`
           : `Unverified quote ${refId}`
       }
       onClick={() => {
@@ -97,13 +99,24 @@ export function QuoteCard({
     >
       {/* Header row */}
       <div className="flex flex-wrap items-center justify-between gap-2 pb-1.5 text-xs font-sans">
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 flex-wrap">
           {verified ? (
             <>
               <BadgeCheck size={16} className="text-verified shrink-0" strokeWidth={1.75} />
               <span className="font-semibold text-verified">Verified</span>
               <span className="text-ink-faint">·</span>
               <span className="font-medium text-ink-muted">{refId}</span>
+              {documentName && (
+                <>
+                  <span className="text-ink-faint">·</span>
+                  <span
+                    className="font-medium text-ink bg-surface-subtle px-1.5 py-0.2 rounded border border-line/60 max-w-[200px] truncate"
+                    title={documentName}
+                  >
+                    {documentName}
+                  </span>
+                </>
+              )}
               {pageLabel && (
                 <>
                   <span className="text-ink-faint">·</span>
@@ -115,6 +128,17 @@ export function QuoteCard({
             <>
               <CircleHelp size={16} className="text-caution shrink-0" strokeWidth={1.75} />
               <span className="font-semibold text-caution">Couldn&apos;t be verified</span>
+              {documentName && (
+                <>
+                  <span className="text-ink-faint">·</span>
+                  <span
+                    className="font-medium text-ink-muted max-w-[200px] truncate"
+                    title={documentName}
+                  >
+                    {documentName}
+                  </span>
+                </>
+              )}
               {failReason && (
                 <>
                   <span className="text-ink-faint">·</span>

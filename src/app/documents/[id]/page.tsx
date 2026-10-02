@@ -82,6 +82,7 @@ export default async function DocumentPage({ params }: DocumentPageProps) {
     select: {
       id: true,
       title: true,
+      kind: true,
       createdAt: true,
       updatedAt: true,
       messages: { select: { id: true } },
@@ -93,6 +94,7 @@ export default async function DocumentPage({ params }: DocumentPageProps) {
   let summaries = existingConversations.map((c) => ({
     id: c.id,
     title: c.title,
+    kind: c.kind,
     createdAt: c.createdAt.toISOString(),
     updatedAt: c.updatedAt.toISOString(),
     messageCount: c.messages.length,
@@ -114,6 +116,7 @@ export default async function DocumentPage({ params }: DocumentPageProps) {
       {
         id: created.id,
         title: created.title,
+        kind: "single",
         createdAt: created.createdAt.toISOString(),
         updatedAt: created.createdAt.toISOString(),
         messageCount: 0,

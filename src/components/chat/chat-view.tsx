@@ -64,7 +64,7 @@ export function ChatView({
               id: q.id,
               ref: q.ref,
               documentId: q.documentId || documentId,
-              documentName: documentName,
+              documentName: q.document?.name || q.documentName || documentName,
               text: q.text,
               verified: q.verified,
               matchKind: q.matchKind,
