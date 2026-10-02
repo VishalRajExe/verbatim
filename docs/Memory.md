@@ -56,6 +56,41 @@ Last updated: 2026-10-02 · Current phase: 0 (complete) · Next phase: 1 (Ingest
 ## Known problems
 - None. All Phase 0 checks and spikes pass.
 
+## Legal-Lens Base Code & Migration Strategy
+The useful base code from `legal-lens` has been incorporated into `verbatim-main` (`backend/`, `frontend/`, `docker/`, `railway.json`, `render.yaml`). Branding has been updated to Verbatim. Detailed inventory mapped in `docs/LEGAL-LENS-MIGRATION.md`.
+
+- **REMOVE OR REPLACE LATER:**
+  - JWT authentication (`backend/routers/auth.py`, `backend/services/auth_service.py`, `frontend/src/pages/LoginPage.tsx`, `RegisterPage.tsx`, `auth.ts`)
+  - Login/account flows & user registration
+  - Multi-tenancy (`organization_id` filters throughout)
+  - MongoDB & Motor async driver (replaced by MySQL 8 + Prisma)
+  - ChromaDB vector store
+  - `sentence-transformers` & PyTorch embedding infrastructure
+  - TXT file upload support (assignment strictly limits to PDF and DOCX)
+  - Unrelated product features & vanity analytics
+
+- **FIX LATER:**
+  - Scanned PDF detection (add threshold check for < 50 chars/page on first 3 pages)
+  - Canonical text architecture & character offset ranges (`[startOffset, endOffset]`)
+  - Deterministic quote verification (reject/flag hallucinated quotes)
+  - Full-document coverage over 100+ page contracts without top-k truncation
+  - Streaming NDJSON response behavior
+  - Exact citation location with visual bounding boxes via `pdfjs-dist` / `react-pdf-highlighter-extended`
+  - Multi-document comparative verification
+  - Clause-level structural comparison with alignment confidence scores
+  - Real tracked-change DOCX redlining (`w:ins` / `w:del` tags)
+
+- **KEEP/REUSE WHERE USEFUL:**
+  - Upload route structure & multipart file handling ideas
+  - Async background processing flow & job queue patterns
+  - Per-page document text extraction & geometry layout
+  - 12 standard clause templates & taxonomy from `clause_library.py`
+  - Prompt formulations & refusal patterns from `ai_features.py` and `rag_engine.py`
+  - Test suites & fixture contracts
+  - Docker Compose orchestration patterns
+  - Cloud deployment configurations (`render.yaml`, `railway.json`)
+  - Frontend UI components, sidebar layout, and Lucide icon selections
+
 ## Next steps
 - **Phase 1 (Upload, processing, library — FR-1)**:
   1. `lib/ingest/validate.ts`: File validation (extension, MIME, magic bytes, max size).
@@ -63,3 +98,4 @@ Last updated: 2026-10-02 · Current phase: 0 (complete) · Next phase: 1 (Ingest
   3. `lib/jobs/runner.ts`: In-process concurrency-limited job queue with crash recovery on boot.
   4. Ingestion pipeline: DOCX conversion -> PDF extraction -> scan check -> furniture stripping -> canonical text & page geometry indexing.
   5. UI: Library dashboard with upload dropzone and status progression.
+

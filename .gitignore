@@ -25,3 +25,22 @@ Thumbs.db
 # Typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Python / Caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+venv/
+.venv/
+env/
+.env/
+
+# Data / Uploads
+backend/data/uploads/*
+!backend/data/uploads/.gitkeep
+backend/data/processed/*
+!backend/data/processed/.gitkeep
+backend/data/chroma_db/
+
