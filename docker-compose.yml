@@ -1,112 +1,20 @@
 services:
-  # ─── Nginx: Frontend + Reverse Proxy ───
-  nginx:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.frontend
+  mysql:
+    image: mysql:8.0
+    container_name: verbatim-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: admin
+      MYSQL_DATABASE: verbatim
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-authentication-plugin=mysql_native_password
+      --max_allowed_packet=64M
     ports:
-      - "${FRONTEND_PORT:-80}:80"
-    depends_on:
-      backend:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80/"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
-    networks:
-      - verbatim
-    restart: unless-stopped
-
-  # ─── Backend: FastAPI ───
-  backend:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.backend
-    env_file: .env
-    environment:
-      - MONGO_URI=${MONGO_URI:-mongodb://verbatim:verbatim@mongodb:27017/verbatim?authSource=admin}
-      - CHROMA_HOST=${CHROMA_HOST:-chromadb}
-      - CHROMA_PORT=${CHROMA_PORT:-8100}
+      - "3306:3306"
     volumes:
-      - uploads_data:/app/backend/data/uploads
-    depends_on:
-      mongodb:
-        condition: service_healthy
-      chromadb:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-    mem_limit: 2g
-    networks:
-      - verbatim
-    restart: unless-stopped
-
-  # ─── MongoDB ───
-  mongodb:
-    image: mongo:7
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-verbatim}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:-verbatim}
-      MONGO_INITDB_DATABASE: verbatim
-    volumes:
-      - mongo_data:/data/db
-      - ./docker/mongo-init.js:/docker-entrypoint-initdb.d/init.js:ro
-    healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-    mem_limit: 1g
-    networks:
-      - verbatim
-    restart: unless-stopped
-
-  # ─── ChromaDB: Vector Database ───
-  chromadb:
-    image: chromadb/chroma:0.5.7
-    volumes:
-      - chroma_data:/chroma/chroma
-    environment:
-      - ANONYMIZED_TELEMETRY=false
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/heartbeat')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-    networks:
-      - verbatim
-    restart: unless-stopped
-
-  # ─── Ollama: Local LLM (optional) ───
-  ollama:
-    image: ollama/ollama:latest
-    profiles: ["ollama"]
-    volumes:
-      - ollama_data:/root/.ollama
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-    networks:
-      - verbatim
-    restart: unless-stopped
+      - mysql_data:/var/lib/mysql
 
 volumes:
-  mongo_data:
-  chroma_data:
-  uploads_data:
-  ollama_data:
-
-networks:
-  verbatim:
-    driver: bridge
+  mysql_data:

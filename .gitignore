@@ -1,37 +1,27 @@
-# Python
-__pycache__/
-*.py[cod]
-*.egg-info/
-dist/
-.venv/
-venv/
-
-# Node
-node_modules/
-frontend/dist/
-
-# Data
-backend/data/uploads/*
-backend/data/processed/*
-backend/data/chroma_db/
-!backend/data/uploads/.gitkeep
-!backend/data/processed/.gitkeep
-
-# IDE
-.vscode/
-.idea/
-
-# OS
-.DS_Store
+node_modules
+/.pnp
+.pnp.js
+.yarn/cache
 
 # Environment
 .env
+.env*.local
 
-# Docker
-docker-compose.override.yml
+# Next.js
+/.next/
+/out/
 
-# Test / Coverage
-.coverage
-htmlcov/
-coverage.xml
-.pytest_cache/
+# Build
+/dist/
+
+# Vitest
+/coverage/
+
+# OS
+.DS_Store
+Thumbs.db
+*.pem
+
+# Typescript
+*.tsbuildinfo
+next-env.d.ts

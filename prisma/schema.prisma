@@ -1,0 +1,173 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum DocStatus {
+  QUEUED
+  EXTRACTING
+  CONVERTING
+  INDEXING
+  READY
+  FAILED
+}
+
+enum MsgStatus {
+  STREAMING
+  COMPLETE
+  STOPPED
+  ERROR
+}
+
+model Document {
+  id            String                 @id @default(cuid())
+  name          String
+  kind          String                 // "pdf" | "docx"
+  sizeBytes     Int
+  sha256        String?
+  status        DocStatus              @default(QUEUED)
+  stage         String?                // e.g. "Reading page 40 of 150"
+  progress      Int                    @default(0) // 0..100
+  pageCount     Int?
+  charCount     Int?
+  tokenEstimate Int?
+  errorCode     String?                // e.g. NO_TEXT_LAYER
+  errorMessage  String?
+  warnings      Json?                  // { emptyPages: [3,4], furnitureStripped: true }
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+  file          DocumentFile?
+  text          DocumentText?
+  pages         DocumentPage[]
+  convDocs      ConversationDocument[]
+  quotes        Quote[]
+
+  @@index([status])
+}
+
+model DocumentFile {
+  documentId String   @id
+  original   Bytes    @db.LongBlob
+  rendition  Bytes?   @db.LongBlob      // PDF rendition for DOCX uploads
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+}
+
+model DocumentText {
+  documentId String   @id
+  text       String   @db.LongText
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+}
+
+model DocumentPage {
+  documentId String
+  pageNo     Int                       // 1-based
+  charStart  Int                       // offset inside canonical text
+  charEnd    Int
+  width      Float                     // pdf.js viewport scale 1
+  height     Float
+  items      Json                      // [[start, len, x, y, w, h], ...] relative to page text
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@id([documentId, pageNo])
+}
+
+model Conversation {
+  id        String                 @id @default(cuid())
+  title     String
+  kind      String                 // "single" | "multi"
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+  documents ConversationDocument[]
+  messages  Message[]
+}
+
+model ConversationDocument {
+  conversationId String
+  documentId     String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  document       Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@id([conversationId, documentId])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  role           String       // "user" | "assistant"
+  content        String       @db.LongText
+  status         MsgStatus    @default(COMPLETE)
+  coverage       Json?        // per-document coverage
+  errorMessage   String?
+  createdAt      DateTime     @default(now())
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  quotes         Quote[]
+
+  @@index([conversationId])
+}
+
+model Quote {
+  id         String   @id @default(cuid())
+  messageId  String
+  documentId String
+  ref        String   // "Q1" (unique per message)
+  text       String   @db.Text
+  verified   Boolean
+  matchKind  String?  // "exact" | "loose"
+  failReason String?  // NOT_FOUND | TOO_SHORT | TOO_LONG | WRONG_DOCUMENT
+  ranges     Json?    // [{ segment, primary, occurrences:[{start,end,pageStart,pageEnd}] }]
+  message    Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  @@index([documentId])
+}
+
+model Comparison {
+  id           String             @id @default(cuid())
+  docAId       String
+  docBId       String
+  status       String             // QUEUED | RUNNING | READY | FAILED
+  stage        String?
+  summary      String?            @db.LongText
+  stats        Json?              // counts by type and significance
+  errorMessage String?
+  createdAt    DateTime           @default(now())
+  changes      ComparisonChange[]
+}
+
+model ComparisonChange {
+  id            String     @id @default(cuid())
+  comparisonId  String
+  orderIdx      Int
+  type          String     // ADDED | REMOVED | MODIFIED | MOVED
+  significance  String     // HIGH | MEDIUM | LOW | COSMETIC
+  category      String?    // liability | payment | termination ...
+  title         String
+  summary       String     @db.Text
+  summarySource String     // "ai" | "automatic"
+  aText         String?    @db.Text
+  bText         String?    @db.Text
+  aStart        Int?
+  aEnd          Int?
+  bStart        Int?
+  bEnd          Int?
+  comparison    Comparison @relation(fields: [comparisonId], references: [id], onDelete: Cascade)
+
+  @@index([comparisonId])
+}
+
+model Redline {
+  id          String   @id @default(cuid())
+  documentId  String
+  instruction String   @db.Text
+  edits       Json     // [{ id, target, replacement, reason, verified, include }]
+  status      String   // PROPOSED | APPLIED | FAILED
+  output      Bytes?   @db.LongBlob
+  createdAt   DateTime @default(now())
+
+  @@index([documentId])
+}
