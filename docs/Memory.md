@@ -1,6 +1,6 @@
 # Memory
 
-Last updated: 2026-10-02 · Current phase: 0 (complete) · Next phase: 1 (Ingestion)
+Last updated: 2026-10-02 · Current phase: 0 (complete) · Next phase: 1 (Ingestion) · Branch: main · Remote: https://github.com/VishalRajExe/verbatim.git
 
 ## Status
 | Phase | State | Notes |
