@@ -7,7 +7,7 @@ const envSchema = z.object({
     .string()
     .url()
     .default("https://generativelanguage.googleapis.com/v1beta/openai/"),
-  LLM_MODEL: z.string().default("gemini-2.5-flash"),
+  LLM_MODEL: z.string().default("gemini-flash-latest"),
   LLM_MAX_CONCURRENCY: z.coerce.number().int().positive().default(2),
   LLM_REASONING_EFFORT: z.string().optional(),
   MAX_UPLOAD_MB: z.coerce.number().int().positive().default(25),

@@ -39,10 +39,12 @@ Last updated: 2026-10-02 · Current phase: 0 (complete) · Next phase: 1 (Ingest
   - Real passage test passed: *"Supplier's aggregate liability under this Agreement shall not exceed AED 100,000."* survived DOCX -> PDF conversion and extracted identically.
 - **Gemini via OpenAI SDK (v4.86.1)**:
   - Base URL: `https://generativelanguage.googleapis.com/v1beta/openai/`
-  - Model: `gemini-2.5-flash`
+  - Model: `gemini-flash-latest` (recommended evergreen alias) and `gemini-2.5-flash`.
   - Streaming: Works via standard `for await (const chunk of stream)` reading `delta.content`.
-  - Structured output: Both `response_format: { type: "json_object" }` and `response_format: { type: "json_schema", json_schema: { name: "...", strict: true, schema: { ... } } }` succeed.
-  - Provider limitation: Internal thinking tokens count against `max_tokens`. Low `max_tokens` (e.g. 20) truncates output prematurely; use `max_tokens >= 300` or omit.
+  - Structured output: `response_format: { type: "json_schema", json_schema: { name: "...", strict: true, schema: { ... } } }` succeeds deterministically.
+  - Provider limitations:
+    - Internal thinking tokens count against `max_tokens`; use `max_tokens >= 300` or omit.
+    - Free tier enforces strict per-model request limits (e.g. 20 RPD on fixed aliases) and transient 429/503 bursts. Requires retry logic with exponential backoff and inter-call cooldown.
 - **MySQL & Prisma (v6.19.3)**:
   - MySQL database `verbatim` running with utf8mb4. Schema applied with initial migration `20261002073826_init`.
   - `GET /api/health` reports DB & LLM status without leaking secrets.

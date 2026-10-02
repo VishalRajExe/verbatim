@@ -14,13 +14,33 @@ describe("Spike C: Gemini OpenAI-compatible client", () => {
       baseURL: env.LLM_BASE_URL,
     });
 
+    // Helper for resilient LLM calls handling provider rate limits
+    async function callWithRetry<T>(fn: () => Promise<T>, maxRetries = 5): Promise<T> {
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          return await fn();
+        } catch (err: unknown) {
+          const status = err && typeof err === "object" && "status" in err ? (err as { status: number }).status : 0;
+          const isRetryable = status === 429 || status === 503 || status === 502 || status === 500;
+          if (isRetryable && attempt < maxRetries) {
+            await new Promise((resolve) => setTimeout(resolve, attempt * 3000));
+            continue;
+          }
+          throw err;
+        }
+      }
+      throw new Error("Exhausted retries");
+    }
+
     // 1. Streamed completion
-    const stream = await client.chat.completions.create({
-      model: env.LLM_MODEL,
-      messages: [{ role: "user", content: "Respond with the word 'VERIFIED'." }],
-      stream: true,
-      max_tokens: 300,
-    });
+    const stream = await callWithRetry(() =>
+      client.chat.completions.create({
+        model: env.LLM_MODEL,
+        messages: [{ role: "user", content: "Respond with the word 'VERIFIED'." }],
+        stream: true,
+        max_tokens: 300,
+      })
+    );
 
     let streamedText = "";
     for await (const chunk of stream) {
@@ -29,33 +49,38 @@ describe("Spike C: Gemini OpenAI-compatible client", () => {
     expect(streamedText.length).toBeGreaterThan(0);
     expect(streamedText.toUpperCase()).toContain("VERIFIED");
 
+    // Cooldown between consecutive calls to avoid bursting free tier
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+
     // 2. Structured JSON completion
-    const jsonCompletion = await client.chat.completions.create({
-      model: env.LLM_MODEL,
-      messages: [
-        {
-          role: "user",
-          content: "Return JSON for { status: 'OK', code: 200 }",
-        },
-      ],
-      response_format: {
-        type: "json_schema",
-        json_schema: {
-          name: "HealthCheckSchema",
-          strict: true,
-          schema: {
-            type: "object",
-            properties: {
-              status: { type: "string" },
-              code: { type: "integer" },
+    const jsonCompletion = await callWithRetry(() =>
+      client.chat.completions.create({
+        model: env.LLM_MODEL,
+        messages: [
+          {
+            role: "user",
+            content: "Return JSON for { status: 'OK', code: 200 }",
+          },
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "HealthCheckSchema",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                status: { type: "string" },
+                code: { type: "integer" },
+              },
+              required: ["status", "code"],
+              additionalProperties: false,
             },
-            required: ["status", "code"],
-            additionalProperties: false,
           },
         },
-      },
-      temperature: 0,
-    });
+        temperature: 0,
+      })
+    );
 
     const rawContent = jsonCompletion.choices[0]?.message?.content || "";
     expect(rawContent.length).toBeGreaterThan(0);
@@ -63,5 +88,5 @@ describe("Spike C: Gemini OpenAI-compatible client", () => {
     const parsed = JSON.parse(rawContent);
     expect(parsed.status).toBe("OK");
     expect(parsed.code).toBe(200);
-  });
+  }, 60000);
 });
