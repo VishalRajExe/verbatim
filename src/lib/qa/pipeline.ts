@@ -127,7 +127,7 @@ async function extractFromChunk(
   // Test hook: if VERBATIM_TEST_INVENT_QUOTE is "true", append a fake quote.
   // This is ONLY for testing that unverified quotes are correctly isolated.
   // NEVER enabled in production (env default is "").
-  if (env.VERBATIM_TEST_INVENT_QUOTE === "true") {
+  if ((process.env.VERBATIM_TEST_INVENT_QUOTE || env.VERBATIM_TEST_INVENT_QUOTE) === "true") {
     quotes = [
       ...quotes,
       {
@@ -153,6 +153,17 @@ function dedupeVerified(quotes: VerifiedQuote[]): VerifiedQuote[] {
   const seen = new Set<string>();
   return quotes.filter((q) => {
     const key = `${q.canonicalStart}-${q.canonicalEnd}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/** Remove duplicate unverified quotes by trimmed text. */
+function dedupeUnverified(quotes: UnverifiedQuote[]): UnverifiedQuote[] {
+  const seen = new Set<string>();
+  return quotes.filter((q) => {
+    const key = q.text.trim().toLowerCase();
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -215,7 +226,7 @@ export async function runQaPipeline(ctx: PipelineContext): Promise<string> {
   );
 
   // ------------------------------------------------------------------
-  // 3. Extract (map over chunks)
+  // 3. Extract (map over chunks with LLM_MAX_CONCURRENCY)
   // ------------------------------------------------------------------
   const allRawQuotes: Array<{
     text: string;
@@ -223,48 +234,100 @@ export async function runQaPipeline(ctx: PipelineContext): Promise<string> {
     chunkEnd: number;
   }> = [];
 
-  for (const chunk of chunks) {
-    if (signal.aborted) break;
+  const successfulChunks = new Set<number>();
+  const failedChunks = new Set<number>();
+  let progressCount = 0;
 
-    emit(
-      encodeEvent({
-        type: "status",
-        stage: "reading",
-        documentId,
-        done: chunk.index + 1,
-        total: chunk.total,
+  // Emit initial progress
+  emit(
+    encodeEvent({
+      type: "status",
+      stage: "reading",
+      documentId,
+      done: 0,
+      total: chunks.length,
+    })
+  );
+
+  await Promise.all(
+    chunks.map(async (chunk) => {
+      if (signal.aborted) return;
+
+        emit(
+          encodeEvent({
+            type: "status",
+            stage: "reading",
+            documentId,
+            done: progressCount + 1,
+            total: chunks.length,
+          })
+        );
+
+        try {
+          // Test hook: force failure of a chosen chunk
+          const failHook =
+            process.env.VERBATIM_TEST_FAIL_CHUNK ||
+            env.VERBATIM_TEST_FAIL_CHUNK;
+          if (
+            failHook &&
+            (failHook === "true"
+              ? chunk.index === 0
+              : Number(failHook) === chunk.index)
+          ) {
+            throw new Error(`Test hook: forced failure of chunk ${chunk.index}`);
+          }
+
+          const extracted = await extractFromChunk(
+            documentName,
+            chunk.text,
+            question,
+            chunk.charStart,
+            chunk.charEnd,
+            documentId,
+            signal
+          );
+
+          for (const q of extracted) {
+            allRawQuotes.push({
+              text: q.text,
+              chunkStart: chunk.charStart,
+              chunkEnd: chunk.charEnd,
+            });
+          }
+          successfulChunks.add(chunk.index);
+        } catch (err: unknown) {
+          if (signal.aborted) return;
+          // Log error metadata only — never log document text (I-9).
+          console.error(`[qa] chunk ${chunk.index} extraction failed:`, {
+            documentId,
+            chunk: chunk.index,
+            error: err instanceof Error ? err.message : String(err),
+          });
+          failedChunks.add(chunk.index);
+        } finally {
+          progressCount++;
+          emit(
+            encodeEvent({
+              type: "status",
+              stage: "reading",
+              documentId,
+              done: Math.min(progressCount, chunks.length),
+              total: chunks.length,
+            })
+          );
+        }
       })
-    );
+  );
 
-    try {
-      const extracted = await extractFromChunk(
-        documentName,
-        chunk.text,
-        question,
-        chunk.charStart,
-        chunk.charEnd,
-        documentId,
-        signal
-      );
-      for (const q of extracted) {
-        allRawQuotes.push({
-          text: q.text,
-          chunkStart: chunk.charStart,
-          chunkEnd: chunk.charEnd,
-        });
-      }
-      coverage = markChunkRead(coverage);
-    } catch (err: unknown) {
-      if (signal.aborted) break;
-      // Log error metadata only — never log document text (I-9).
-      console.error(`[qa] chunk ${chunk.index} extraction failed:`, {
-        documentId,
-        chunk: chunk.index,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      coverage = markChunkFailed(coverage, chunk.index);
-    }
-  }
+  coverage = {
+    ...coverage,
+    chunksRead: successfulChunks.size,
+    failedChunks: Array.from(failedChunks).sort((a, b) => a - b),
+    complete:
+      successfulChunks.size === chunks.length &&
+      failedChunks.size === 0 &&
+      coverage.unreadablePages === 0,
+  };
 
   // ------------------------------------------------------------------
   // 4. Verify
@@ -321,9 +384,10 @@ export async function runQaPipeline(ctx: PipelineContext): Promise<string> {
     ...q,
     ref: `Q${i + 1}`,
   }));
-  const unverified = quoteResults.filter(
+  const unverifiedRaw = quoteResults.filter(
     (q): q is UnverifiedQuote => !q.verified
   );
+  const unverified = dedupeUnverified(unverifiedRaw);
 
   // ------------------------------------------------------------------
   // 5. Persist Quote rows
@@ -410,7 +474,8 @@ export async function runQaPipeline(ctx: PipelineContext): Promise<string> {
       : notFoundPartial(
           documentName,
           coverage.chunksRead,
-          coverage.chunksTotal
+          coverage.chunksTotal,
+          coverage.unreadablePages
         );
     emit(encodeEvent({ type: "token", text: finalContent }));
   } else {

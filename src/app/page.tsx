@@ -70,7 +70,7 @@ export default async function LibraryPage() {
 
         {/* Upload Dropzone */}
         <section>
-          <Dropzone onUploadSuccess={() => {}} />
+          <Dropzone />
         </section>
 
         {/* Documents Table & Status Pipeline */}

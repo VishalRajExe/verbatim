@@ -126,24 +126,23 @@ export function notFoundComplete(
   documentName: string,
   chunksTotal: number
 ): string {
-  const sections = chunksTotal === 1
-    ? "the whole document"
-    : `all ${chunksTotal} sections`;
-  return `I couldn't find a passage that answers this in ${documentName} (${sections} read).`;
+  const sectionsText = chunksTotal === 1 ? "1 section" : `all ${chunksTotal} sections`;
+  return `I couldn't find it in the document (${documentName}, ${sectionsText} read).`;
 }
 
 /**
  * Message when no verified quotes were found — partial coverage (I-5).
- * Must never claim something does not exist when coverage is incomplete.
+ * Must NEVER say "There is no such clause" or claim absence when coverage is incomplete.
  */
 export function notFoundPartial(
   documentName: string,
   chunksRead: number,
-  chunksTotal: number
+  chunksTotal: number,
+  unreadablePages?: number
 ): string {
-  return (
-    `I couldn't find it in the sections I could read ` +
-    `(${chunksRead} of ${chunksTotal} sections from ${documentName}). ` +
-    `I can't confirm it's absent — some sections weren't read.`
-  );
+  let msg = `I couldn't find it in the sections I could read (${chunksRead} of ${chunksTotal} sections read from ${documentName}). Absence is not confirmed.`;
+  if (unreadablePages && unreadablePages > 0) {
+    msg += ` Note: ${unreadablePages} ${unreadablePages === 1 ? "page" : "pages"} had no selectable text and could not be searched.`;
+  }
+  return msg;
 }

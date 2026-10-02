@@ -19,7 +19,7 @@ export function CoverageBadge({ coverage }: CoverageBadgeProps) {
         return (
           <div
             key={idx}
-            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium ${
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium ${
               isComplete
                 ? "bg-verified-soft text-verified border border-verified-line/50"
                 : "bg-caution-soft text-caution border border-caution-line"
@@ -34,8 +34,8 @@ export function CoverageBadge({ coverage }: CoverageBadgeProps) {
               {isComplete
                 ? `Read all ${doc.chunksTotal} ${
                     doc.chunksTotal === 1 ? "section" : "sections"
-                  }`
-                : `Read ${doc.chunksRead} of ${doc.chunksTotal} sections`}
+                  }${doc.pages ? `, ${doc.pages} pages` : ""}`
+                : `Read ${doc.chunksRead} of ${doc.chunksTotal} sections; absence is not confirmed`}
             </span>
 
             {doc.unreadablePages && doc.unreadablePages > 0 ? (

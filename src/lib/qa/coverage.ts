@@ -1,21 +1,28 @@
 /**
  * Coverage object: tracks which chunks and pages were successfully read.
  *
- * I-5: Every answer carries a coverage object. If any section failed or
- * any pages were unreadable, the answer must not claim something does not exist.
+ * Rules (PRD FR-4, Architecture §8, Rules I-5):
+ * - Every answer carries a coverage object.
+ * - Tracks total sections (chunksTotal), successful sections (chunksRead),
+ *   failed sections (failedChunks), and unreadable pages.
+ * - complete = true ONLY when all required sections succeeded and no unreadable pages exist.
+ * - If coverage is not complete, the application MUST NOT claim something does not exist.
  */
 
 export interface CoverageDoc {
   documentId: string;
   documentName: string;
+  /** Total sections the document was divided into. */
   chunksTotal: number;
+  /** Number of sections successfully read. */
   chunksRead: number;
+  /** 0-based indices of any sections that failed extraction. */
   failedChunks: number[];
   /** Total pages in the document. */
   pages: number;
-  /** Pages that had no text (from Document.warnings). */
+  /** Pages that had no text / could not be read. */
   unreadablePages: number;
-  /** True only if ALL chunks read and no failures. */
+  /** True only if ALL sections succeeded AND no unreadable pages exist. */
   complete: boolean;
 }
 
@@ -41,19 +48,33 @@ export function initCoverage(
 
 /** Record a successful chunk read. */
 export function markChunkRead(cov: CoverageDoc): CoverageDoc {
-  const updated = { ...cov, chunksRead: cov.chunksRead + 1 };
-  updated.complete =
-    updated.chunksRead === updated.chunksTotal &&
-    updated.failedChunks.length === 0;
-  return updated;
+  const updatedRead = cov.chunksRead + 1;
+  const isComplete =
+    updatedRead === cov.chunksTotal &&
+    cov.failedChunks.length === 0 &&
+    cov.unreadablePages === 0;
+
+  return {
+    ...cov,
+    chunksRead: updatedRead,
+    complete: isComplete,
+  };
 }
 
 /** Record a failed chunk. */
 export function markChunkFailed(cov: CoverageDoc, chunkIndex: number): CoverageDoc {
-  const updated = {
+  const updatedFailed = cov.failedChunks.includes(chunkIndex)
+    ? cov.failedChunks
+    : [...cov.failedChunks, chunkIndex];
+
+  return {
     ...cov,
-    failedChunks: [...cov.failedChunks, chunkIndex],
+    failedChunks: updatedFailed,
+    complete: false,
   };
-  updated.complete = false;
-  return updated;
+}
+
+/** Check if coverage is incomplete or carries caveats. */
+export function hasCoverageCaveat(cov: CoverageDoc): boolean {
+  return !cov.complete || cov.unreadablePages > 0 || cov.failedChunks.length > 0;
 }

@@ -2,12 +2,13 @@
 
 import React, { useRef, useState } from "react";
 import { UploadCloud, AlertCircle, Loader2 } from "lucide-react";
+import { mutate } from "swr";
 
 interface DropzoneProps {
-  onUploadSuccess: () => void;
+  onUploadSuccess?: () => void;
 }
 
-export function Dropzone({ onUploadSuccess }: DropzoneProps) {
+export function Dropzone({ onUploadSuccess }: DropzoneProps = {}) {
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -46,7 +47,8 @@ export function Dropzone({ onUploadSuccess }: DropzoneProps) {
       if (!res.ok) {
         setErrorMessage(data.error || "Failed to upload document.");
       } else {
-        onUploadSuccess();
+        mutate("/api/documents");
+        onUploadSuccess?.();
         if (fileInputRef.current) {
           fileInputRef.current.value = "";
         }

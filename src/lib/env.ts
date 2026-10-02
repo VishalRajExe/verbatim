@@ -19,6 +19,9 @@ const envSchema = z.object({
   // This allows verifying that unverified quotes are shown but never used in compose.
   // MUST remain off (default "") in all production deployments.
   VERBATIM_TEST_INVENT_QUOTE: z.string().default(""),
+  // Test-only hook: when set (e.g. "1" or "true"), forces that chunk index to fail extraction.
+  // MUST remain off (default "") in all production deployments.
+  VERBATIM_TEST_FAIL_CHUNK: z.string().default(""),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 });
 
