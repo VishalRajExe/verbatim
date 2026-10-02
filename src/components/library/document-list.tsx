@@ -12,6 +12,7 @@ import {
   Calendar,
   Layers,
   MessageSquareText,
+  ArrowRightLeft,
   X,
 } from "lucide-react";
 import { StatusPipeline, DocStatus } from "./status-pipeline";
@@ -120,6 +121,11 @@ export function DocumentList({ initialData }: { initialData?: DocumentItem[] }) 
     router.push(`/ask?docs=${selectedIds.join(",")}`);
   };
 
+  const handleCompare = () => {
+    if (selectedIds.length !== 2) return;
+    router.push(`/compare?older=${selectedIds[0]}&newer=${selectedIds[1]}`);
+  };
+
   // Screen reader live status announcement
   const liveStatusText = documents
     .filter((d) => d.status !== "READY" && d.status !== "FAILED")
@@ -135,12 +141,21 @@ export function DocumentList({ initialData }: { initialData?: DocumentItem[] }) 
 
       {/* Header and Multi-document Action Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 pb-2 border-b border-line">
-        <h2 className="text-lg font-serif font-semibold text-ink">
-          Documents{" "}
-          <span className="text-xs font-sans font-normal text-ink-muted tabular-nums">
-            ({documents.length})
-          </span>
-        </h2>
+        <div className="flex items-center gap-4">
+          <h2 className="text-lg font-serif font-semibold text-ink">
+            Documents{" "}
+            <span className="text-xs font-sans font-normal text-ink-muted tabular-nums">
+              ({documents.length})
+            </span>
+          </h2>
+          <Link
+            href="/compare"
+            className="text-xs text-accent hover:underline flex items-center gap-1 font-medium"
+          >
+            <ArrowRightLeft size={13} />
+            <span>Compare versions</span>
+          </Link>
+        </div>
 
         {selectedIds.length > 0 && (
           <div className="flex items-center gap-2 bg-surface-subtle border border-line px-3 py-1.5 rounded-lg text-xs animate-in fade-in duration-200">
@@ -150,17 +165,30 @@ export function DocumentList({ initialData }: { initialData?: DocumentItem[] }) 
 
             {selectedIds.length < 2 ? (
               <span className="text-ink-muted">
-                (select at least 2 to ask across)
+                (select at least 2)
               </span>
             ) : (
-              <button
-                type="button"
-                onClick={handleAskAcross}
-                className="inline-flex items-center gap-1.5 px-3 py-1 bg-accent text-on-accent font-medium rounded-md hover:bg-accent/90 transition-colors shadow-sm"
-              >
-                <MessageSquareText size={14} />
-                <span>Ask across documents ({selectedIds.length})</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleAskAcross}
+                  className="inline-flex items-center gap-1.5 px-3 py-1 bg-accent text-on-accent font-medium rounded-md hover:bg-accent/90 transition-colors shadow-sm"
+                >
+                  <MessageSquareText size={14} />
+                  <span>Ask across ({selectedIds.length})</span>
+                </button>
+
+                {selectedIds.length === 2 && (
+                  <button
+                    type="button"
+                    onClick={handleCompare}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 bg-surface border border-line text-ink font-medium rounded-md hover:bg-surface-subtle transition-colors shadow-sm"
+                  >
+                    <ArrowRightLeft size={14} />
+                    <span>Compare versions</span>
+                  </button>
+                )}
+              </div>
             )}
 
             <button

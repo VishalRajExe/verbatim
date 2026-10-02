@@ -37,7 +37,31 @@ export async function recoverUnfinishedJobs(): Promise<number> {
       console.log(`[JobRecovery] Re-queued document: ${doc.name} (${doc.id})`);
     }
 
-    return unfinished.length;
+    // Also recover unfinished comparisons
+    const unfinishedComparisons = await db.comparison.findMany({
+      where: {
+        status: { in: ["QUEUED", "RUNNING"] },
+      },
+      select: { id: true },
+    });
+
+    if (unfinishedComparisons.length > 0) {
+      console.log(`[JobRecovery] Found ${unfinishedComparisons.length} unfinished comparison(s). Recovering...`);
+      const { enqueueComparison } = await import("./runner");
+      for (const comp of unfinishedComparisons) {
+        await db.comparison.update({
+          where: { id: comp.id },
+          data: {
+            status: "QUEUED",
+            stage: "Queued for processing",
+          },
+        });
+        enqueueComparison(comp.id);
+        console.log(`[JobRecovery] Re-queued comparison: ${comp.id}`);
+      }
+    }
+
+    return unfinished.length + unfinishedComparisons.length;
   } catch (err) {
     console.error("[JobRecovery] Error recovering unfinished jobs:", err);
     return 0;
