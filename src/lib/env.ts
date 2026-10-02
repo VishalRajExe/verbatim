@@ -15,6 +15,10 @@ const envSchema = z.object({
   MAX_DOCS_PER_QUESTION: z.coerce.number().int().positive().default(5),
   SOFFICE_PATH: z.string().default("soffice"),
   REDLINE_AUTHOR: z.string().default("Verbatim AI"),
+  // Test-only hook: when "true", the extract step appends one invented quote.
+  // This allows verifying that unverified quotes are shown but never used in compose.
+  // MUST remain off (default "") in all production deployments.
+  VERBATIM_TEST_INVENT_QUOTE: z.string().default(""),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 });
 
