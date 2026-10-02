@@ -81,3 +81,54 @@ for m, d, a in milestones:
 
 doc_docx.save(docx_path)
 print(f"Generated DOCX: {docx_path}")
+
+# 3. Generate 5-page synthetic PDF with page 5 blank
+from reportlab.platypus import PageBreak
+from reportlab.graphics.shapes import Drawing, Rect
+
+five_page_path = os.path.join(fixtures_dir, "synthetic_5page_with_blank.pdf")
+doc_5p = SimpleDocTemplate(five_page_path, pagesize=letter)
+story_5p = []
+
+# Page 1: paragraph
+story_5p.append(Paragraph("<b>MASTER SERVICES AGREEMENT - PAGE 1</b>", styles["Title"]))
+story_5p.append(Paragraph("This Agreement is made on January 15, 2026 by and between Enterprise Client and Prime Supplier.", styles["Normal"]))
+story_5p.append(Paragraph("Both parties mutually agree to the terms, conditions, and schedules set forth herein.", styles["Normal"]))
+story_5p.append(PageBreak())
+
+# Page 2: clause
+story_5p.append(Paragraph("<b>Clause 1: Confidentiality Obligations</b>", styles["Heading2"]))
+story_5p.append(Paragraph("Each party agrees to maintain in strict confidence all proprietary technical, financial, and business information received from the disclosing party.", styles["Normal"]))
+story_5p.append(Paragraph("The receiving party shall not disclose Confidential Information to any third party without prior written consent.", styles["Normal"]))
+story_5p.append(PageBreak())
+
+# Page 3: clause
+story_5p.append(Paragraph("<b>Clause 2: Limitation of Liability</b>", styles["Heading2"]))
+story_5p.append(Paragraph("In no event shall either party's aggregate liability arising out of or related to this Agreement exceed AED 500,000.", styles["Normal"]))
+story_5p.append(Paragraph("Neither party shall be liable for indirect, incidental, special, or consequential damages.", styles["Normal"]))
+story_5p.append(PageBreak())
+
+# Page 4: paragraph
+story_5p.append(Paragraph("<b>Section 3: Governing Law and Dispute Resolution</b>", styles["Heading2"]))
+story_5p.append(Paragraph("This Agreement shall be governed by and construed in accordance with English law and the jurisdiction of the London Commercial Court.", styles["Normal"]))
+story_5p.append(PageBreak())
+
+# Page 5: completely blank (just a tiny transparent spacer or empty drawing so page 5 exists with 0 text)
+d = Drawing(10, 10)
+d.add(Rect(0, 0, 10, 10, fillColor=colors.white, strokeColor=colors.white))
+story_5p.append(d)
+
+doc_5p.build(story_5p)
+print(f"Generated 5-Page PDF: {five_page_path}")
+
+# 4. Generate Scanned (Image-Only) PDF with no extractable text
+from reportlab.pdfgen import canvas
+scanned_path = os.path.join(fixtures_dir, "synthetic_scanned_image.pdf")
+c = canvas.Canvas(scanned_path, pagesize=letter)
+# Draw an image-like rect / drawing with no text operator
+c.setFillColor(colors.lightgrey)
+c.rect(50, 50, 500, 700, fill=1, stroke=1)
+c.showPage()
+c.save()
+print(f"Generated Scanned PDF: {scanned_path}")
+

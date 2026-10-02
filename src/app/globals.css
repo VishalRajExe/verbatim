@@ -3,19 +3,35 @@
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #09090b;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #09090b;
-    --foreground: #ededed;
-  }
+  --paper: #F9F9F8;
+  --surface: #FFFFFF;
+  --surface-subtle: #F2F3F0;
+  --line: #E2E4DE;
+  --line-strong: #C8CCC1;
+  --ink: #14171A;
+  --ink-muted: #4A525A;
+  --ink-faint: #7D8792;
+  --accent: #1B365D;
+  --accent-soft: #EBF1F7;
+  --on-accent: #FFFFFF;
+  --verified: #0E6251;
+  --verified-soft: #E8F5F1;
+  --verified-line: #A2D9CE;
+  --caution: #8A4B08;
+  --caution-soft: #FCF1DE;
+  --caution-line: #E3BE82;
+  --danger: #B42318;
+  --danger-soft: #FDECEA;
+  --slate: #4B5D73;
+  --slate-soft: #EAEEF3;
+  --faint: #667085;
+  --faint-soft: #F0F1F3;
 }
 
 body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: var(--ink);
+  background: var(--paper);
+  font-family: var(--font-ui), system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
 }
