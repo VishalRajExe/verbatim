@@ -108,63 +108,69 @@ export async function processDocument(documentId: string): Promise<void> {
     // Build canonical text and geometry index
     const canonical = buildCanonicalDocument(strippedPages);
 
-    // 5. Database transaction: store canonical text, pages, and mark READY
-    await db.$transaction(async (tx) => {
-      // Store canonical text
-      await tx.documentText.upsert({
-        where: { documentId },
-        create: {
-          documentId,
-          text: canonical.canonicalText,
-        },
-        update: {
-          text: canonical.canonicalText,
-        },
+    // 5. Database transaction: store canonical text, pages, and mark READY.
+    // Retry on MySQL deadlocks (P2034) which can occur in test environments.
+    const runTx = async () =>
+      db.$transaction(async (tx) => {
+        await tx.documentText.upsert({
+          where: { documentId },
+          create: { documentId, text: canonical.canonicalText },
+          update: { text: canonical.canonicalText },
+        });
+
+        await tx.documentPage.deleteMany({ where: { documentId } });
+
+        await tx.documentPage.createMany({
+          data: canonical.pages.map((p) => ({
+            documentId,
+            pageNo: p.pageNo,
+            charStart: p.charStart,
+            charEnd: p.charEnd,
+            width: p.width,
+            height: p.height,
+            items: p.items as unknown as object,
+          })),
+        });
+
+        const warnings =
+          canonical.emptyPages.length > 0
+            ? { emptyPages: canonical.emptyPages }
+            : undefined;
+
+        await tx.document.update({
+          where: { id: documentId },
+          data: {
+            status: "READY",
+            stage: "Ready",
+            progress: 100,
+            pageCount: canonical.pages.length,
+            charCount: canonical.charCount,
+            tokenEstimate: canonical.tokenEstimate,
+            warnings,
+            errorCode: null,
+            errorMessage: null,
+          },
+        });
       });
 
-      // Clear existing pages if re-running
-      await tx.documentPage.deleteMany({
-        where: { documentId },
-      });
-
-      // Insert pages with compact item geometry
-      await tx.documentPage.createMany({
-        data: canonical.pages.map((p) => ({
-          documentId,
-          pageNo: p.pageNo,
-          charStart: p.charStart,
-          charEnd: p.charEnd,
-          width: p.width,
-          height: p.height,
-          items: p.items as any,
-        })),
-      });
-
-      // Mark READY with warnings if empty pages were detected
-      const warnings =
-        canonical.emptyPages.length > 0
-          ? { emptyPages: canonical.emptyPages }
-          : undefined;
-
-      await tx.document.update({
-        where: { id: documentId },
-        data: {
-          status: "READY",
-          stage: "Ready",
-          progress: 100,
-          pageCount: canonical.pages.length,
-          charCount: canonical.charCount,
-          tokenEstimate: canonical.tokenEstimate,
-          warnings,
-          errorCode: null,
-          errorMessage: null,
-        },
-      });
-    });
+    // Up to 3 attempts with backoff on deadlock.
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await runTx();
+        break;
+      } catch (txErr: any) {
+        if (txErr?.code === "P2034" && attempt < 3) {
+          await new Promise((r) => setTimeout(r, 300 * attempt));
+          continue;
+        }
+        throw txErr;
+      }
+    }
   } catch (err: any) {
     const errorCode = err.code || "INTERNAL";
-    const errorMessage = err.message || "An unexpected error occurred during processing.";
-
+    // Truncate long messages (Prisma errors can include full stack traces).
+    const rawMsg: string = err.message || "An unexpected error occurred during processing.";
+    const errorMessage = rawMsg.slice(0, 500);
     await db.document.update({
       where: { id: documentId },
       data: {
