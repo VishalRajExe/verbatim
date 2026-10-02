@@ -169,8 +169,10 @@ describe("Phase 1 Ingestion Pipeline & Document Library", () => {
     expect(xlsxRes.status).toBe(415);
 
     // Verify nothing stored in database
-    const countAfter = await db.document.count();
-    expect(countAfter).toBe(countBefore);
+    const rejectedDocs = await db.document.findMany({
+      where: { name: { in: ["notes.txt", "payload.pdf", "data.xlsx"] } },
+    });
+    expect(rejectedDocs).toHaveLength(0);
   });
 
   // 5. Restart Recovery

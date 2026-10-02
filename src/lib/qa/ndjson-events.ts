@@ -41,6 +41,7 @@ export interface QuoteEventItem {
   pageStart: number | null;
   pageEnd: number | null;
   occurrences: number;
+  ranges?: any;
 }
 
 export interface QuotesEvent {

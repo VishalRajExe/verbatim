@@ -3,6 +3,9 @@
 import React, { useState } from "react";
 import { ConversationRail, ConversationSummary } from "./conversation-rail";
 import { ChatView } from "./chat-view";
+import { PdfViewer } from "@/components/viewer/pdf-viewer";
+import type { ActiveQuoteTarget } from "@/components/viewer/types";
+import type { QuoteData } from "./message-item";
 
 interface DocumentChatContainerProps {
   documentId: string;
@@ -25,6 +28,10 @@ export function DocumentChatContainer({
     initialActiveConversationId
   );
   const [isCreatingChat, setIsCreatingChat] = useState(false);
+
+  // Viewer state (Phase 5 FR-5)
+  const [activeQuote, setActiveQuote] = useState<ActiveQuoteTarget | null>(null);
+  const [isViewerOpen, setIsViewerOpen] = useState(false);
 
   const refreshConversations = async () => {
     try {
@@ -93,6 +100,33 @@ export function DocumentChatContainer({
     }
   };
 
+  const handleSelectQuote = (quote: QuoteData, occurrenceIndex = 0) => {
+    setActiveQuote({
+      quoteId: quote.id || quote.ref,
+      ref: quote.ref,
+      documentId: quote.documentId || documentId,
+      documentName: quote.documentName || documentName,
+      text: quote.text,
+      pageStart: quote.pageStart,
+      pageEnd: quote.pageEnd,
+      occurrences: quote.occurrences || 1,
+      ranges: quote.ranges,
+      currentOccurrenceIndex: occurrenceIndex,
+    });
+    setIsViewerOpen(true);
+  };
+
+  const handleChangeOccurrence = (newIndex: number) => {
+    if (!activeQuote) return;
+    setActiveQuote((prev) =>
+      prev ? { ...prev, currentOccurrenceIndex: newIndex } : null
+    );
+  };
+
+  const handleCloseViewer = () => {
+    setIsViewerOpen(false);
+  };
+
   return (
     <div className="flex h-screen w-full overflow-hidden bg-paper">
       {/* Left Rail */}
@@ -116,10 +150,26 @@ export function DocumentChatContainer({
           documentId={documentId}
           documentName={documentName}
           onConversationUpdated={refreshConversations}
+          activeQuoteRef={isViewerOpen ? activeQuote?.ref : null}
+          activeOccurrenceIndex={activeQuote?.currentOccurrenceIndex ?? 0}
+          onSelectQuote={handleSelectQuote}
         />
       ) : (
         <div className="flex-1 flex items-center justify-center text-ink-muted text-sm">
           No conversation selected. Click &quot;New chat&quot; to begin.
+        </div>
+      )}
+
+      {/* Right Column / Sheet: PDF Viewer with verified citation highlights */}
+      {isViewerOpen && (
+        <div className="w-[50%] lg:w-[48%] xl:w-[45%] h-full shrink-0 shadow-lg z-30 transition-all duration-200">
+          <PdfViewer
+            documentId={activeQuote?.documentId || documentId}
+            documentName={activeQuote?.documentName || documentName}
+            activeQuote={activeQuote}
+            onClose={handleCloseViewer}
+            onChangeOccurrence={handleChangeOccurrence}
+          />
         </div>
       )}
     </div>

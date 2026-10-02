@@ -440,6 +440,7 @@ export async function runQaPipeline(ctx: PipelineContext): Promise<string> {
         pageStart: q.pageStart,
         pageEnd: q.pageEnd,
         occurrences: q.occurrenceCount,
+        ranges: q.ranges as any,
       })
     ),
     ...unverified.map(

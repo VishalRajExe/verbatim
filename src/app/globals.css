@@ -26,6 +26,52 @@
   --slate-soft: #EAEEF3;
   --faint: #667085;
   --faint-soft: #F0F1F3;
+  --mark: rgba(255, 200, 40, 0.45);
+  --mark-active: rgba(255, 200, 40, 0.75);
+  --mark-ring: #C98A00;
+}
+
+@keyframes highlight-pulse {
+  0% {
+    background-color: rgba(255, 200, 40, 0.45);
+    box-shadow: 0 0 0 0 rgba(201, 138, 0, 0);
+  }
+  50% {
+    background-color: rgba(255, 200, 40, 0.95);
+    box-shadow: 0 0 0 2px rgba(201, 138, 0, 0.8);
+  }
+  100% {
+    background-color: rgba(255, 200, 40, 0.75);
+    box-shadow: 0 0 0 1.5px rgba(201, 138, 0, 0.7);
+  }
+}
+
+.verbatim-highlight-active,
+.TextHighlight--scrolledTo .TextHighlight__part {
+  background-color: var(--mark-active) !important;
+  outline: 1.5px solid var(--mark-ring) !important;
+  outline-offset: -1px;
+}
+
+.TextHighlight__part {
+  background-color: var(--mark) !important;
+  border-radius: 2px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .verbatim-highlight-pulse,
+  .TextHighlight--scrolledTo .TextHighlight__part {
+    animation: highlight-pulse 600ms ease-out 1 forwards;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .verbatim-highlight-pulse,
+  .TextHighlight--scrolledTo .TextHighlight__part {
+    animation: none !important;
+    background-color: var(--mark-active) !important;
+    outline: 1.5px solid var(--mark-ring) !important;
+  }
 }
 
 body {

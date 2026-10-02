@@ -11,6 +11,9 @@ interface ChatViewProps {
   documentId: string;
   documentName: string;
   onConversationUpdated?: () => void;
+  activeQuoteRef?: string | null;
+  activeOccurrenceIndex?: number;
+  onSelectQuote?: (quote: QuoteData, occurrenceIndex?: number) => void;
 }
 
 export function ChatView({
@@ -18,12 +21,18 @@ export function ChatView({
   documentId,
   documentName,
   onConversationUpdated,
+  activeQuoteRef: propActiveQuoteRef,
+  activeOccurrenceIndex = 0,
+  onSelectQuote,
 }: ChatViewProps) {
   const [messages, setMessages] = useState<MessageData[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const [isStreaming, setIsStreaming] = useState(false);
-  const [activeQuoteRef, setActiveQuoteRef] = useState<string | null>(null);
+  const [localActiveQuoteRef, setLocalActiveQuoteRef] = useState<string | null>(null);
+
+  const activeQuoteRef = propActiveQuoteRef !== undefined ? propActiveQuoteRef : localActiveQuoteRef;
+  const setActiveQuoteRef = (ref: string | null) => setLocalActiveQuoteRef(ref);
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -54,6 +63,8 @@ export function ChatView({
             quotes: (m.quotes || []).map((q: any) => ({
               id: q.id,
               ref: q.ref,
+              documentId: q.documentId || documentId,
+              documentName: documentName,
               text: q.text,
               verified: q.verified,
               matchKind: q.matchKind,
@@ -61,6 +72,7 @@ export function ChatView({
               pageEnd: q.ranges?.[0]?.occurrences?.[0]?.pageEnd ?? null,
               occurrences: q.ranges?.[0]?.occurrences?.length ?? 1,
               failReason: q.failReason,
+              ranges: q.ranges,
             })),
           }));
           setMessages(loaded);
@@ -80,7 +92,7 @@ export function ChatView({
         abortControllerRef.current.abort();
       }
     };
-  }, [conversationId]);
+  }, [conversationId, documentId, documentName]);
 
   useEffect(() => {
     scrollToBottom();
@@ -186,6 +198,8 @@ export function ChatView({
               case "quotes":
                 current.quotes = event.quotes.map((q) => ({
                   ref: q.ref,
+                  documentId: q.documentId || documentId,
+                  documentName: q.documentName || documentName,
                   text: q.text,
                   verified: q.verified,
                   matchKind: q.matchKind,
@@ -193,6 +207,7 @@ export function ChatView({
                   pageEnd: q.pageEnd,
                   occurrences: q.occurrences,
                   failReason: q.failReason,
+                  ranges: q.ranges,
                 }));
                 break;
 
@@ -259,12 +274,13 @@ export function ChatView({
     }
   };
 
-  const handleQuoteClick = (refId: string) => {
-    setActiveQuoteRef(refId);
-    const el = document.getElementById(`quote-card-${refId}`);
+  const handleQuoteClick = (quote: QuoteData, occurrenceIndex = 0) => {
+    setActiveQuoteRef(quote.ref);
+    const el = document.getElementById(`quote-card-${quote.ref}`);
     if (el) {
       el.scrollIntoView({ behavior: "smooth", block: "center" });
     }
+    onSelectQuote?.(quote, occurrenceIndex);
   };
 
   return (
@@ -298,6 +314,7 @@ export function ChatView({
                 key={m.id}
                 message={m}
                 activeQuoteRef={activeQuoteRef}
+                activeOccurrenceIndex={activeOccurrenceIndex}
                 onQuoteSelect={handleQuoteClick}
                 onQuoteHover={(ref) => setActiveQuoteRef(ref)}
                 onQuoteLeave={() => setActiveQuoteRef(null)}

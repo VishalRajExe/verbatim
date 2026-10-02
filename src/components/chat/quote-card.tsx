@@ -13,7 +13,9 @@ export interface QuoteCardProps {
   occurrences?: number;
   failReason?: string | null;
   isActive?: boolean;
+  activeOccurrenceIndex?: number;
   onSelect?: () => void;
+  onSelectOccurrence?: (occurrenceIndex: number) => void;
 }
 
 export function QuoteCard({
@@ -26,10 +28,20 @@ export function QuoteCard({
   occurrences = 1,
   failReason,
   isActive = false,
+  activeOccurrenceIndex,
   onSelect,
+  onSelectOccurrence,
 }: QuoteCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
-  const [currentOccurrence, setCurrentOccurrence] = useState(1);
+  const [currentOccurrence, setCurrentOccurrence] = useState(
+    activeOccurrenceIndex !== undefined ? activeOccurrenceIndex + 1 : 1
+  );
+
+  React.useEffect(() => {
+    if (activeOccurrenceIndex !== undefined) {
+      setCurrentOccurrence(activeOccurrenceIndex + 1);
+    }
+  }, [activeOccurrenceIndex]);
 
   const isLong = text.length > 320;
   const displayText = isLong && !isExpanded ? text.slice(0, 300) + "…" : text;
@@ -44,12 +56,16 @@ export function QuoteCard({
 
   const handlePrev = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setCurrentOccurrence((prev) => (prev > 1 ? prev - 1 : occurrences));
+    const nextVal = currentOccurrence > 1 ? currentOccurrence - 1 : occurrences;
+    setCurrentOccurrence(nextVal);
+    onSelectOccurrence?.(nextVal - 1);
   };
 
   const handleNext = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setCurrentOccurrence((prev) => (prev < occurrences ? prev + 1 : 1));
+    const nextVal = currentOccurrence < occurrences ? currentOccurrence + 1 : 1;
+    setCurrentOccurrence(nextVal);
+    onSelectOccurrence?.(nextVal - 1);
   };
 
   return (

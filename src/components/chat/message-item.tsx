@@ -10,6 +10,8 @@ import type { CoverageDoc } from "@/lib/qa/coverage";
 export interface QuoteData {
   id?: string;
   ref: string;
+  documentId?: string;
+  documentName?: string;
   text: string;
   verified: boolean;
   matchKind?: string | null;
@@ -17,6 +19,7 @@ export interface QuoteData {
   pageEnd?: number | null;
   occurrences?: number;
   failReason?: string | null;
+  ranges?: any;
 }
 
 export interface MessageData {
@@ -35,7 +38,8 @@ export interface MessageData {
 interface MessageItemProps {
   message: MessageData;
   activeQuoteRef?: string | null;
-  onQuoteSelect?: (refId: string) => void;
+  activeOccurrenceIndex?: number;
+  onQuoteSelect?: (quote: QuoteData, occurrenceIndex?: number) => void;
   onQuoteHover?: (refId: string) => void;
   onQuoteLeave?: () => void;
   onRetry?: () => void;
@@ -44,6 +48,7 @@ interface MessageItemProps {
 export function MessageItem({
   message,
   activeQuoteRef,
+  activeOccurrenceIndex = 0,
   onQuoteSelect,
   onQuoteHover,
   onQuoteLeave,
@@ -123,7 +128,9 @@ export function MessageItem({
                 pageEnd={q.pageEnd}
                 occurrences={q.occurrences || 1}
                 isActive={activeQuoteRef === q.ref}
-                onSelect={() => onQuoteSelect?.(q.ref)}
+                activeOccurrenceIndex={activeQuoteRef === q.ref ? activeOccurrenceIndex : 0}
+                onSelect={() => onQuoteSelect?.(q, 0)}
+                onSelectOccurrence={(occIndex) => onQuoteSelect?.(q, occIndex)}
               />
             ))}
           </div>
@@ -174,7 +181,10 @@ export function MessageItem({
         <div className="pt-2">
           <AnswerContent
             content={message.content}
-            onQuoteClick={onQuoteSelect}
+            onQuoteClick={(refId) => {
+              const matched = verifiedQuotes.find((vq) => vq.ref === refId);
+              if (matched) onQuoteSelect?.(matched, 0);
+            }}
             onQuoteHover={onQuoteHover}
             onQuoteLeave={onQuoteLeave}
           />
